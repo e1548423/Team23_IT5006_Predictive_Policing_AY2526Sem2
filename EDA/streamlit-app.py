@@ -1,23 +1,132 @@
 import streamlit as st
 import pandas as pd
+import os
+import seaborn as sns
+import matplotlib.pyplot as plt
+import gdown
 
-# Set the title of the app
-st.title("My First Streamlit App 🚀")
+# --- CONFIGURATION ---
+FILE_ID = "1sf2LEsakAjMzEqayzZ-1maf0aYXHYm1a"
+CSV_FILE = "project_data.csv"
+PARQUET_FILE = "project_data.parquet"
 
-# Add some text
-st.write("Welcome to my first dashboard created in VS Code!")
+@st.cache_data
+def get_data_from_gdrive(file_id):
+    """Download CSV from Google Drive, convert to Parquet, and return dataframe"""
+    url = f"https://drive.google.com/uc?id={file_id}"
+    gdown.download(url, CSV_FILE, quiet=False)
 
-# Create a simple dataframe
-df = pd.DataFrame({
-    'Column A': [1, 2, 3, 4],
-    'Column B': [10, 20, 30, 40]
-})
+    # Load CSV
+    df = pd.read_csv(CSV_FILE, on_bad_lines="skip")
 
-# Display the table
-st.subheader("Simple Data Table")
-st.write(df)
+    # Ensure Date column is datetime
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    else:
+        st.error("No 'Date' column found in dataset for time series analysis.")
 
-# Add an interactive widget
-user_input = st.text_input("What is your name?")
-if user_input:
-    st.write(f"Hello, {user_input}!")
+    # Convert specific object, int64, and float64 columns to category
+    cols_to_convert = ["IUCR", "Primary Type", "Description", "Beat", "District", "Ward", "Community Area", "FBI Code"]
+    df[cols_to_convert] = df[cols_to_convert].astype("category")
+
+    # Convert and cache as Parquet
+    df.to_parquet(PARQUET_FILE, index=False)
+    return df
+
+# --- CACHE LOGIC ---
+st.subheader("Data Source Status")
+
+if os.path.exists(PARQUET_FILE):
+    # Load from local Parquet cache
+    df = pd.read_parquet(PARQUET_FILE)
+    st.success(f"🚀 Loaded {len(df):,} rows from local cache!")
+    if st.button("🔄 Refresh from Google Drive"):
+        os.remove(PARQUET_FILE)
+        if os.path.exists(CSV_FILE):
+            os.remove(CSV_FILE)
+        st.rerun()
+else:
+    # Download and convert one time only
+    with st.spinner("Downloading dataset from Google Drive... this may take a minute."):
+        df = get_data_from_gdrive(FILE_ID)
+        st.success("✅ Downloaded CSV, converted to Parquet, and cached locally!")
+
+try:
+    st.title("Chicago Crime Dataset - Exploratory Data Analysis")
+
+    # Module 1: Dataset Overview
+    st.header("1. Dataset Overview")
+    st.write(f"Rows: {df.shape[0]}, Columns: {df.shape[1]}")
+
+    # Show column names and data types
+    st.subheader("Column Names and Data Types")
+    st.table(pd.DataFrame({"Column Name": df.columns, "Data Type": df.dtypes.values}))
+
+    # Module 2: Data Preview with Date Range Filter
+    st.header("2. Data Preview with Date Range")
+
+    # Assume Date column is already datetime in cached parquet
+    min_date, max_date = df["Date"].min(), df["Date"].max()
+
+    date_range = st.slider(
+        "Select date range",
+        min_value=min_date.date(),
+        max_value=max_date.date(),
+        value=(min_date.date(), max_date.date())
+    )
+
+    filtered_range_df = df[
+        (df["Date"].dt.date >= date_range[0]) & (df["Date"].dt.date <= date_range[1])
+    ]
+
+    st.write(f"Showing {len(filtered_range_df)} rows between {date_range[0]} and {date_range[1]}:")
+    st.dataframe(filtered_range_df.head(50))
+
+    # Module 3: Missing Values 
+    st.header("3. Missing Values by Year")
+    if "Date" in df.columns:
+        df["Year"] = df["Date"].dt.year
+        missing_by_year = df.groupby("Year").apply(lambda x: x.isnull().sum())
+        #st.write(missing_by_year)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.heatmap(missing_by_year.T, cmap="Reds", annot=True, fmt="d", ax=ax)
+        ax.set_title("Missing Values by Year")
+        st.pyplot(fig)
+
+    # Module 4: Time Series Analysis
+    st.header("4. Time Series Analysis: Cases Over Time")
+
+    if "Date" in df.columns and "Case Number" in df.columns:
+        # By Date
+        daily_cases = df.groupby("Date")["Case Number"].sum()
+        fig, ax = plt.subplots()
+        daily_cases.plot(ax=ax)
+        ax.set_title("Cases by Date")
+        st.pyplot(fig)
+
+        # By Week
+        weekly_cases = df.resample("W", on="Date")["Case Number"].sum()
+        fig, ax = plt.subplots()
+        weekly_cases.plot(ax=ax)
+        ax.set_title("Cases by Week")
+        st.pyplot(fig)
+
+        # By Month
+        monthly_cases = df.resample("M", on="Date")["Case Number"].sum()
+        fig, ax = plt.subplots()
+        monthly_cases.plot(ax=ax)
+        ax.set_title("Cases by Month")
+        st.pyplot(fig)
+
+        # By Year
+        yearly_cases = df.resample("Y", on="Date")["Case Number"].sum()
+        fig, ax = plt.subplots()
+        yearly_cases.plot(ax=ax)
+        ax.set_title("Cases by Year")
+        st.pyplot(fig)
+    else:
+        st.info("No 'Case Number' column found to plot time series.")
+
+except Exception as e:
+    st.error(f"Error loading file: {e}")
