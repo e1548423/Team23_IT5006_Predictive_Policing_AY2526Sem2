@@ -4,6 +4,8 @@ import os
 import seaborn as sns
 import matplotlib.pyplot as plt
 import gdown
+import plotly.graph_objects as go
+import plotly.express as px
 
 # --- CONFIGURATION ---
 FILE_ID = "1sf2LEsakAjMzEqayzZ-1maf0aYXHYm1a"
@@ -98,35 +100,78 @@ try:
     st.header("4. Time Series Analysis: Cases Over Time")
 
     if "Date" in df.columns and "Case Number" in df.columns:
-        # By Date
-        daily_cases = df.groupby("Date")["Case Number"].sum()
-        fig, ax = plt.subplots()
-        daily_cases.plot(ax=ax)
-        ax.set_title("Cases by Date")
-        st.pyplot(fig)
+        # Frequency selector
+        freq_option = st.selectbox(
+            "Select frequency for time series",
+            options=["Year", "Quarter", "Month"],
+            index=0
+        )
 
-        # By Week
-        weekly_cases = df.resample("W", on="Date")["Case Number"].sum()
-        fig, ax = plt.subplots()
-        weekly_cases.plot(ax=ax)
-        ax.set_title("Cases by Week")
-        st.pyplot(fig)
+        freq_map = {"Year": "YS", "Quarter": "QS", "Month": "MS"} # Use 'S' for Start of period
+        freq = freq_map[freq_option]
 
-        # By Month
-        monthly_cases = df.resample("M", on="Date")["Case Number"].sum()
-        fig, ax = plt.subplots()
-        monthly_cases.plot(ax=ax)
-        ax.set_title("Cases by Month")
-        st.pyplot(fig)
+        # 1. Resample - Keep 'Date' as a datetime column
+        cases = (
+            df.resample(freq, on="Date")["Case Number"]
+            .count()
+            .reset_index()
+        )
 
-        # By Year
-        yearly_cases = df.resample("Y", on="Date")["Case Number"].sum()
-        fig, ax = plt.subplots()
-        yearly_cases.plot(ax=ax)
-        ax.set_title("Cases by Year")
-        st.pyplot(fig)
+        # Drop empty bins
+        cases = cases[cases["Case Number"] > 0]
+
+        # 2. Create figure - Use the actual DATE column for X
+        fig = go.Figure()
+        
+        # Determine tooltip format based on selection
+        hover_fmt = "%Y" if freq_option == "Year" else "%b %Y"
+        if freq_option == "Quarter":
+            # Plotly doesn't have a native 'Q' hover format, so we'll pre-format a custom hover column
+            cases["HoverLabel"] = cases["Date"].dt.to_period("Q").astype(str)
+            x_hover = cases["HoverLabel"]
+        else:
+            x_hover = cases["Date"].dt.strftime(hover_fmt)
+
+        fig.add_trace(go.Scatter(
+            x=cases["Date"], 
+            y=cases["Case Number"],
+            mode="lines+markers",
+            name=f"Cases by {freq_option}",
+            customdata=x_hover,
+            hovertemplate="Period: %{customdata}<br>Cases: %{y}<extra></extra>"
+        ))
+
+        # 3. Add alternating shaded bands (Now aligned because both use Datetime)
+        years = df["Date"].dt.year.unique()
+        for i, year in enumerate(sorted(years)):
+            fig.add_vrect(
+                x0=f"{year}-01-01", x1=f"{year}-12-31",
+                fillcolor="lightgrey" if i % 2 == 0 else "white",
+                opacity=0.2,
+                layer="below",
+                line_width=0
+            )
+
+        # 4. Update layout with proper axis formatting
+        dt_format = "%Y"
+        if freq_option == "Month":
+            dt_format = "%b %Y"
+        elif freq_option == "Quarter":
+            # Plotly trick to show Quarters on axis
+            fig.update_xaxes(tickformat="Q%q\n%Y") 
+
+        fig.update_layout(
+            title=f"Cases by {freq_option}",
+            xaxis_title=freq_option,
+            yaxis_title="Number of Cases",
+            hovermode="x unified",
+            xaxis=dict(tickformat=dt_format if freq_option != "Quarter" else None)
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
     else:
-        st.info("No 'Case Number' column found to plot time series.")
+        st.info("No 'Date' or 'Case Number' column found.")
 
 except Exception as e:
     st.error(f"Error loading file: {e}")
