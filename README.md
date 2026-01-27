@@ -27,3 +27,4 @@
    ```
    streamlit run streamlit_app.py
    ```
+#### Note: This application implements a local caching strategy. Upon the initial run, the raw .csv dataset is fetched from Google Drive and serialized into the .parquet format. Subsequent launches prioritize this local Parquet cache, significantly reducing I/O overhead and memory usage by bypassing the 100MB+ cloud download.
