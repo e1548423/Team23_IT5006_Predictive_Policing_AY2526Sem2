@@ -5,3 +5,9 @@ matplotlib
 gdown
 plotly
 streamlit-option-menu
+numpy
+geopandas
+shapely
+pyproj
+fiona
+kagglehub
