@@ -10,25 +10,86 @@ from streamlit_option_menu import option_menu
 import json
 import geopandas as gpd
 from shapely import wkt
+import kagglehub
+from kagglehub import KaggleDatasetAdapter
+
+KAGGLE_ACC = 'rkyz801/'
+DATASET_ID = 'it5006chicagocrimeparquet'
+FILE_LIST = ["ChicagoCrimes(20152025).parquet","ChicagoCommunityArea.parquet"]
 
 
 @st.cache_data
-def get_kaggle_crime_data():
-    # Get the directory of the current script
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(script_dir, "..", "ProjectData", "ChicagoCrimes(20152025).parquet")
-    df = pd.read_parquet(file_path)
+def get_data_kaggle_crime(file_id):
+    df = kagglehub.load_dataset(
+        KaggleDatasetAdapter.PANDAS,
+        KAGGLE_ACC + DATASET_ID,
+        file_id,
+        )
+    return df
 
-    # Parsing date column into proper date format
-    df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%Y %I:%M:%S %p', errors='coerce')
-    df = df.rename(columns={"Date":"Datetime"})
-    df['Date'] = df['Datetime'].dt.date
-    df['Time'] = df['Datetime'].dt.time
+if os.path.exists(FILE_LIST[0]):
+    # Load from local Parquet cache
+    df_crime = pd.read_parquet(FILE_LIST[0])
+    st.success(f"{FILE_LIST[0]} Loaded {len(df_crime):,} rows from local cache!")
+    if st.button("🔄 Refresh from Kaggle"):
+        os.remove(FILE_LIST[0])
+        if os.path.exists(FILE_LIST[0]):
+            os.remove(FILE_LIST[0])
+        st.rerun()
+else:
+    # Download and convert one time only
+    with st.spinner("Downloading dataset from Kaggle... this may take a minute."):
+        df_crime = get_data_kaggle_crime(FILE_LIST[0])
+        st.success(f"✅ {FILE_LIST[0] }Downloaded , and cached locally!")
 
+
+if os.path.exists(FILE_LIST[1]):
+    # Load from local Parquet cache
+    df_polygon = pd.read_parquet(FILE_LIST[1])
+    st.success(f"{FILE_LIST[1]} Loaded {len(df_polygon):,} rows from local cache!")
+    if st.button("🔄 Refresh from Kaggle"):
+        os.remove(FILE_LIST[1])
+        if os.path.exists(FILE_LIST[1]):
+            os.remove(FILE_LIST[1])
+        st.rerun()
+else:
+    # Download and convert one time only
+    with st.spinner("Downloading dataset from Kaggle... this may take a minute."):
+        df_polygon = get_data_kaggle_crime(FILE_LIST[1])
+        st.success(f"✅ {FILE_LIST[1] }Downloaded, and cached locally!")
+
+@st.cache_data
+def process_crime_data(df_main):
+    df_main['Date'] = pd.to_datetime(df_main['Date'], format='%m/%d/%Y %I:%M:%S %p', errors='coerce')
+    df_main = df_main.rename(columns={"Date":"Datetime"})
+    df_main['Date'] = df_main['Datetime'].dt.date
+    df_main['Time'] = df_main['Datetime'].dt.time
+    df_main['Month'] = df_main['Datetime'].dt.month
+    df_main['Year'] = df_main['Datetime'].dt.year
     # Convert specific object, int64, and float64 columns to category
     cols_to_convert = ["IUCR", "Primary Type", "Description", "Beat", "District", "Ward", "Community Area", "FBI Code"]
-    df[cols_to_convert] = df[cols_to_convert].astype("category")
-    return df
+    df_main[cols_to_convert] = df_main[cols_to_convert].astype("category")
+    return df_main
+
+
+@st.cache_data
+def process_geo_data(df_main):
+    df_process = df_main
+    df_process.columns = ['GEOMETRY','AREA_NUMBER','COMMUNITY','AREA_NUM_1','SHAPE_AREA','SHAPE_LEN']
+
+    # Convert WKT string to geometry objects and convert area to km2
+    df_process["GEOMETRY_OBJ"] = df_process["GEOMETRY"].apply(wkt.loads)
+    df_process['SHAPE_AREA_FLT'] = df_process['SHAPE_AREA'].apply(lambda x: float(x.replace('.', '').replace(',', '.')))
+    df_process['AREA_KM2']  = round(df_process['SHAPE_AREA_FLT'] * 9.2903e-8,2)
+
+    # Create GeoDataFrame
+    geo_data = gpd.GeoDataFrame(
+        df_process,
+        geometry="GEOMETRY_OBJ",
+        crs="EPSG:4326"
+    )
+
+    return geo_data
 
 @st.cache_data
 def get_crime_data_clean(df_input):
@@ -40,30 +101,6 @@ def get_crime_data_clean(df_input):
     df_clean["Year"] = df_clean["Datetime"].dt.year
 
     return df_clean
-
-@st.cache_data
-def get_chicago_area_data():
-    # Get the directory of the current script
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(script_dir, "..", "ProjectData", "ChicagoCommunityArea.parquet")
-    df_polygon = pd.read_parquet(file_path)
-
-    df_polygon = pd.read_csv(os.path.join(script_dir, "..", "ProjectData", "ChicagoCommunityArea.csv")).iloc[:,1:]
-    df_polygon.columns = ['GEOMETRY','AREA_NUMBER','COMMUNITY','AREA_NUM_1','SHAPE_AREA','SHAPE_LEN']
-
-    # Convert WKT string to geometry objects and convert area to km2
-    df_polygon["GEOMETRY_OBJ"] = df_polygon["GEOMETRY"].apply(wkt.loads)
-    df_polygon['SHAPE_AREA_FLT'] = df_polygon['SHAPE_AREA'].apply(lambda x: float(x.replace('.', '').replace(',', '.')))
-    df_polygon['AREA_KM2']  = round(df_polygon['SHAPE_AREA_FLT'] * 9.2903e-8,2)
-
-    # Create GeoDataFrame
-    geo_data = gpd.GeoDataFrame(
-        df_polygon,
-        geometry="GEOMETRY_OBJ",
-        crs="EPSG:4326"
-    )
-
-    return geo_data
 
 @st.cache_data
 def process_gdf_yearly(df_main, _geo_main):
@@ -155,9 +192,11 @@ def crime_group(df_main):
 
 def crime_cases_group(df_main):
     # Assuming df_clean already has a 'Datetime' column parsed
+    df_main = df_main.dropna()
+    df_main = df_main[df_main["Year"] != 2026]
     df_main["Date"] = df_main["Datetime"].dt.date
     df_main["Week"] = df_main["Datetime"].dt.to_period("W").dt.start_time
-    df_main["Month"] = df_main["Datetime"].dt.to_period("M").dt.start_time
+    df_main["Month"] = df_main["Datetime"].dt.month
     df_main["Year"] = df_main["Datetime"].dt.year
 
     # Aggregate counts using df_clean
@@ -177,10 +216,9 @@ with st.sidebar:
     )
 
 # ==========Retrieving and Processing Data==========
-df = get_kaggle_crime_data()
-df_clean = get_crime_data_clean(df)
+df_clean = process_crime_data(df_crime)
+gdf = process_geo_data(df_polygon)
 df_top_crime, top_crime_list = process_crimes(df_clean)
-gdf = get_chicago_area_data()
 gdf_plot_yearly = process_gdf_yearly(df_clean, gdf)
 df_time_crime_percentage, df_time_crime_summary = crime_percent_time(df_clean,top_crime_list)
 cases_by_month_year = crime_group(df_clean)
@@ -368,19 +406,19 @@ if selected == "Project Data Overview":
 
     st.write("This streamlit application's main objective is to conduct an Exploratory Data Analysis (EDA) on crimes that are occuring "
     "in Chicago from from 2015 - 2015. The main data is obtained from the open source data provided by Chicago Data Portal.")
-    st.write(f"The dataset contains {df.shape[0]} rows and {df.shape[1]} columns")
+    st.write(f"The dataset contains {df_crime.shape[0]} rows and {df_crime.shape[1]} columns")
     # ===Dataset Overview===
     st.header("1. Dataset Overview")
     
     # Show column names and data types
     st.subheader("Column Names and Data Types")
-    st.table(pd.DataFrame({"Column Name": df.columns, "Data Type": df.dtypes.astype(str).values}))
+    st.table(pd.DataFrame({"Column Name": df_crime.columns, "Data Type": df_crime.dtypes.astype(str).values}))
 
     # ===Data Preview with Date Range Filter===
     st.header("Data Preview with Date Range")
 
     # Assume Date column is already datetime in cached parquet
-    min_date, max_date = df["Date"].min(), df["Date"].max()
+    min_date, max_date = df_crime["Date"].min().to_pydatetime(), df_crime["Date"].max().to_pydatetime()
 
     date_range = st.slider(
         "Select date range",
@@ -389,8 +427,8 @@ if selected == "Project Data Overview":
         value=(min_date, max_date)
     )
 
-    filtered_range_df = df[
-        (df["Date"] >= date_range[0]) & (df["Date"] <= date_range[1])
+    filtered_range_df = df_crime[
+        (df_crime["Date"] >= date_range[0]) & (df_crime["Date"] <= date_range[1])
     ]
 
     st.write(f"Showing {len(filtered_range_df)} rows between {date_range[0]} and {date_range[1]}:")
@@ -403,9 +441,9 @@ if selected == "Project Data Overview":
     "over different years. It is discovered that the amount of missing data is small compared to the whole dataset which will not distort the overall EDA when removed. " \
     "Also, this simplifies workflow - avoid complexity of imputing values which can introduce bias if not done carefully.")
 
-    if "Date" in df.columns:
+    if "Date" in df_crime.columns:
         missing_by_year = (
-            df.assign(Year=df["Datetime"].dt.year)
+            df_crime.assign(Year=df_crime["Date"].dt.year)
             .groupby("Year")
             .apply(lambda x: x.isnull().sum())
         )
