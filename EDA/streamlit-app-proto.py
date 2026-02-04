@@ -223,7 +223,7 @@ def crime_cases_group(df_main):
     df_main = df_main[df_main["Year"] != 2026]
     df_main["Date"] = df_main["Datetime"].dt.date
     df_main["Week"] = df_main["Datetime"].dt.to_period("W").dt.start_time
-    df_main["Month"] = df_main["Datetime"].dt.month
+    df_main["Month"] = df_main["Datetime"].dt.to_period("M").astype(str)
     df_main["Year"] = df_main["Datetime"].dt.year
 
     # Aggregate counts using df_clean
@@ -274,8 +274,8 @@ fig_crime_cases.add_trace(go.Scatter(x=cases_by_week["Week"], y=cases_by_week["C
                          mode="lines", name="By Week", visible=False))
 fig_crime_cases.add_trace(go.Scatter(x=cases_by_month["Month"], y=cases_by_month["Cases"],
                          mode="lines", name="By Month", visible=False))
-fig_crime_cases.add_trace(go.Bar(x=cases_by_year["Year"], y=cases_by_year["Cases"],
-                        name="By Year", visible=False))
+fig_crime_cases.add_trace(go.Scatter(x=cases_by_year["Year"], y=cases_by_year["Cases"],
+                         mode="lines", name="By Year", visible=False))
 # Add dropdown menu to toggle visibility
 fig_crime_cases.update_layout(
     updatemenus=[
@@ -285,16 +285,20 @@ fig_crime_cases.update_layout(
             buttons=[
                 dict(label="Date", method="update",
                      args=[{"visible": [True, False, False, False]},
-                           {"title": "Cases by Date"}]),
+                           {"title": "Cases by Date", 
+                            "xaxis": {"type": "date", "autorange": True}}]),
                 dict(label="Week", method="update",
                      args=[{"visible": [False, True, False, False]},
-                           {"title": "Cases by Week"}]),
+                           {"title": "Cases by Week",
+                            "xaxis": {"type": "date", "autorange": True}}]),
                 dict(label="Month", method="update",
                      args=[{"visible": [False, False, True, False]},
-                           {"title": "Cases by Month"}]),
+                           {"title": "Cases by Month",
+                            "xaxis": {"type": "category", "autorange": True}}]),
                 dict(label="Year", method="update",
                      args=[{"visible": [False, False, False, True]},
-                           {"title": "Cases by Year"}]),
+                           {"title": "Cases by Year",
+                            "xaxis": {"type": "date", "autorange": True}}]),
             ]
         )
     ]
