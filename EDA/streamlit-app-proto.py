@@ -459,6 +459,9 @@ if selected == "Project Data Overview":
     "over different years. It is discovered that the amount of missing data is small compared to the whole dataset which will not distort the overall EDA when removed. " \
     "Also, this simplifies workflow - avoid complexity of imputing values which can introduce bias if not done carefully.")
 
+    # Ensure date column is actually datetime object and get min and max
+    df_crime["Date"] = pd.to_datetime(df_crime["Date"])
+
     if "Date" in df_crime.columns:
         missing_by_year = (
             df_crime.assign(Year=df_crime["Date"].dt.year)
