@@ -430,27 +430,27 @@ if selected == "Project Data Overview":
     st.subheader("Column Names and Data Types")
     st.table(pd.DataFrame({"Column Name": df_crime.columns, "Data Type": df_crime.dtypes.astype(str).values}))
 
-    # ===Data Preview with Date Range Filter===
-    st.header("Data Preview with Date Range")
+    # # ===Data Preview with Date Range Filter=== (Optional)
+    # st.header("Data Preview with Date Range")
 
-    # Ensure date column is actually datetime object and get min and max
-    df_crime["Date"] = pd.to_datetime(df_crime["Date"])
-    min_date = df_crime["Date"].min().to_pydatetime()
-    max_date = df_crime["Date"].max().to_pydatetime()
+    # # Ensure date column is actually datetime object and get min and max
+    # df_crime["Date"] = pd.to_datetime(df_crime["Date"])
+    # min_date = df_crime["Date"].min().to_pydatetime()
+    # max_date = df_crime["Date"].max().to_pydatetime()
 
-    date_range = st.slider(
-        "Select date range",
-        min_value=min_date,
-        max_value=max_date,
-        value=(min_date, max_date)
-    )
+    # date_range = st.slider(
+    #     "Select date range",
+    #     min_value=min_date,
+    #     max_value=max_date,
+    #     value=(min_date, max_date)
+    # )
 
-    filtered_range_df = df_crime[
-        (df_crime["Date"] >= date_range[0]) & (df_crime["Date"] <= date_range[1])
-    ]
+    # filtered_range_df = df_crime[
+    #     (df_crime["Date"] >= date_range[0]) & (df_crime["Date"] <= date_range[1])
+    # ]
 
-    st.write(f"Showing {len(filtered_range_df)} rows between {date_range[0]} and {date_range[1]}:")
-    st.dataframe(filtered_range_df.head(50))
+    # st.write(f"Showing {len(filtered_range_df)} rows between {date_range[0]} and {date_range[1]}:")
+    # st.dataframe(filtered_range_df.head(50))
 
     # ===Missing Values===
     st.header("Missing Values by Year")
