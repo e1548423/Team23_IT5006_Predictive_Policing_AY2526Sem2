@@ -60,15 +60,31 @@ else:
 
 @st.cache_data
 def process_crime_data(df_main):
-    df_main['Date'] = pd.to_datetime(df_main['Date'], format='%m/%d/%Y %I:%M:%S %p', errors='coerce')
-    df_main = df_main.rename(columns={"Date":"Datetime"})
+    # 1. Standard Date Processing
+    df_main['Date_Temp'] = pd.to_datetime(df_main['Date'], format='%m/%d/%Y %I:%M:%S %p', errors='coerce')
+    df_main = df_main.rename(columns={"Date": "Original_Date_Str", "Date_Temp": "Datetime"})
+    
+    # Extract temporal features
     df_main['Date'] = df_main['Datetime'].dt.date
     df_main['Time'] = df_main['Datetime'].dt.time
     df_main['Month'] = df_main['Datetime'].dt.month
     df_main['Year'] = df_main['Datetime'].dt.year
-    # Convert specific object, int64, and float64 columns to category
+
+    # 2. Handling Duplicates (Keep latest based on 'ID')
+    # Sort by Case Number and ID (Descending)
+    df_main = df_main.sort_values(by=['Case Number', 'ID'], ascending=[True, False])
+    
+    # Drop duplicates, keeping the first (which is now the latest due to sort)
+    df_main = df_main.drop_duplicates(subset=['Case Number'], keep='first')
+
+    # 3. Handling Missing Data
+    # Removes any row where critical data is missing (e.g., Latitude, Longitude, or Ward)
+    df_main = df_main.dropna()
+
+    # 4. Memory Optimization: Convert to Categories
     cols_to_convert = ["IUCR", "Primary Type", "Description", "Beat", "District", "Ward", "Community Area", "FBI Code"]
     df_main[cols_to_convert] = df_main[cols_to_convert].astype("category")
+    
     return df_main
 
 
@@ -417,8 +433,10 @@ if selected == "Project Data Overview":
     # ===Data Preview with Date Range Filter===
     st.header("Data Preview with Date Range")
 
-    # Assume Date column is already datetime in cached parquet
-    min_date, max_date = df_crime["Date"].min().to_pydatetime(), df_crime["Date"].max().to_pydatetime()
+    # Ensure date column is actually datetime object and get min and max
+    df_crime["Date"] = pd.to_datetime(df_crime["Date"])
+    min_date = df_crime["Date"].min().to_pydatetime()
+    max_date = df_crime["Date"].max().to_pydatetime()
 
     date_range = st.slider(
         "Select date range",
@@ -453,6 +471,29 @@ if selected == "Project Data Overview":
         sns.heatmap(missing_by_year.T, cmap="Reds", annot=True, fmt="d", ax=ax)
         ax.set_title("Missing Values by Year")
         st.pyplot(fig)
+
+    # ===Duplicate Records Analysis===
+    st.header("Duplicate Records")
+
+    # Calculate metrics
+    total_rows = len(df_crime)
+    # keep=False ensures we count every instance of a duplicate for the count
+    total_duplicate_rows = df_crime.duplicated(subset=['Case Number'], keep=False).sum()
+    unique_duplicates = df_crime.duplicated(subset=['Case Number']).sum()
+    duplicate_pct = (unique_duplicates / total_rows)
+
+    # Display as metrics
+    col1, col2 = st.columns(2)
+    col1.metric("Duplicate Rows Found", unique_duplicates)
+    col2.metric("Data Redundancy", f"{duplicate_pct:.4%}")
+
+    if unique_duplicates > 0:
+        st.warning(f"Found {unique_duplicates} redundant records. It is recommended to remove these before proceeding with the EDA.")
+        
+        # Show a sample of the duplicates
+        if st.checkbox("Show sample of duplicate records"):
+            sample_dups = df_crime[df_crime.duplicated(subset=['Case Number'], keep=False)].sort_values("Case Number")
+            st.dataframe(sample_dups.head(20))
 
 # ========== VISUALIZATION PAGE ==========
 
