@@ -12,6 +12,7 @@ import geopandas as gpd
 from shapely import wkt
 import kagglehub
 from kagglehub import KaggleDatasetAdapter
+import datetime
 
 KAGGLE_ACC = 'rkyz801/'
 DATASET_ID = 'it5006chicagocrimeparquet'
@@ -27,42 +28,52 @@ def get_data_kaggle_crime(file_id):
         )
     return df
 
+# --- Helper to load and save ---
+def load_and_save_data(file_id, local_path, is_crime_data=False):
+    with st.spinner(f"Downloading {file_id} from Kaggle..."):
+        df = get_data_kaggle_crime(file_id)
+        
+        if is_crime_data:
+            # Cleaning: Convert and Filter
+            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            target_date = datetime.date(2026, 1, 1)
+            df = df[df['Date'].dt.date != target_date]
+        
+        # CRITICAL: Save to disk so os.path.exists() finds it next time
+        df.to_parquet(local_path, index=False)
+        return df
+
+# --- Main Logic for FILE_LIST[0] (Crime Data) ---
 if os.path.exists(FILE_LIST[0]):
-    # Load from local Parquet cache
     df_crime = pd.read_parquet(FILE_LIST[0])
-    st.success(f"{FILE_LIST[0]} Loaded {len(df_crime):,} rows from local cache!")
-    if st.button("🔄 Refresh from Kaggle"):
-        os.remove(FILE_LIST[0])
-        if os.path.exists(FILE_LIST[0]):
-            os.remove(FILE_LIST[0])
-        st.rerun()
+    # Re-verify datetime type after loading from parquet
+    if not pd.api.types.is_datetime64_any_dtype(df_crime['Date']):
+         df_crime['Date'] = pd.to_datetime(df_crime['Date'], errors='coerce')
+    st.success(f"Loaded {len(df_crime):,} crime records from local cache.")
 else:
-    # Download and convert one time only
-    with st.spinner("Downloading dataset from Kaggle... this may take a minute."):
-        df_crime = get_data_kaggle_crime(FILE_LIST[0])
-        st.success(f"✅ {FILE_LIST[0] }Downloaded , and cached locally!")
+    df_crime = load_and_save_data(FILE_LIST[0], FILE_LIST[0], is_crime_data=True)
+    st.success("Crime data downloaded and cached!")
 
-
+# --- Main Logic for FILE_LIST[1] (Polygon Data) ---
 if os.path.exists(FILE_LIST[1]):
-    # Load from local Parquet cache
     df_polygon = pd.read_parquet(FILE_LIST[1])
-    st.success(f"{FILE_LIST[1]} Loaded {len(df_polygon):,} rows from local cache!")
-    if st.button("🔄 Refresh from Kaggle"):
-        os.remove(FILE_LIST[1])
-        if os.path.exists(FILE_LIST[1]):
-            os.remove(FILE_LIST[1])
-        st.rerun()
+    st.success(f"Loaded {len(df_polygon):,} polygon records from local cache.")
 else:
-    # Download and convert one time only
-    with st.spinner("Downloading dataset from Kaggle... this may take a minute."):
-        df_polygon = get_data_kaggle_crime(FILE_LIST[1])
-        st.success(f"✅ {FILE_LIST[1] }Downloaded, and cached locally!")
+    df_polygon = load_and_save_data(FILE_LIST[1], FILE_LIST[1])
+    st.success("Polygon data downloaded and cached!")
+
+# --- Unified Refresh Button ---
+if st.sidebar.button("🔄 Clean Cache & Redownload Everything"):
+    for file in FILE_LIST:
+        if os.path.exists(file):
+            os.remove(file)
+    st.rerun()
 
 @st.cache_data
 def process_crime_data(df_main):
     # 1. Standard Date Processing
-    df_main['Date_Temp'] = pd.to_datetime(df_main['Date'], format='%m/%d/%Y %I:%M:%S %p', errors='coerce')
-    df_main = df_main.rename(columns={"Date": "Original_Date_Str", "Date_Temp": "Datetime"})
+    # df_main['Date_Temp'] = pd.to_datetime(df_main['Date'], format='%m/%d/%Y %I:%M:%S %p', errors='coerce')
+    df_main = df_main.rename(columns={"Date": "Datetime"})
     
     # Extract temporal features
     df_main['Date'] = df_main['Datetime'].dt.date
@@ -421,13 +432,10 @@ if selected == "Project Data Overview":
     st.title("Chicago Crime Dataset - Exploratory Data Analysis")
 
     st.write("This streamlit application's main objective is to conduct an Exploratory Data Analysis (EDA) on crimes that are occuring "
-    "in Chicago from from 2015 - 2015. The main data is obtained from the open source data provided by Chicago Data Portal.")
+    "in Chicago from from 2015 - 2025. The main data is obtained from the open source data provided by Chicago Data Portal.")
     st.write(f"The dataset contains {df_crime.shape[0]} rows and {df_crime.shape[1]} columns")
     # ===Dataset Overview===
-    st.header("1. Dataset Overview")
-    
-    # Show column names and data types
-    st.subheader("Column Names and Data Types")
+    st.header("Column Names and Data Types")
     st.table(pd.DataFrame({"Column Name": df_crime.columns, "Data Type": df_crime.dtypes.astype(str).values}))
 
     # # ===Data Preview with Date Range Filter=== (Optional)
