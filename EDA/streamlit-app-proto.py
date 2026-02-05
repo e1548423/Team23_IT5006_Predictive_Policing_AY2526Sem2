@@ -147,20 +147,22 @@ def process_gdf_yearly(df_main, _geo_main):
 
 @st.cache_data
 def process_crimes(df_main):
-    grouped_crime = df_main.groupby(['Primary Type','Year','Month']).size().reset_index(name='Crime Count')
-    grouped_crime = grouped_crime.sort_values(by=['Primary Type', 'Year', 'Month']).reset_index(drop=True)
-    grouped_crime = grouped_crime.loc[grouped_crime['Primary Type'] != 'OTHER OFFENSE']
-    grouped_crime['Cummulative Count'] = grouped_crime.groupby(['Primary Type'])['Crime Count'].cumsum()
+    # 1. Group by Type and Year to get the total incidents for THAT year only
+    grouped_crime = df_main.groupby(['Primary Type','Year']).size().reset_index(name='Yearly Count')
 
+    # 2. Filter out 'OTHER OFFENSE' (optional)
+    # grouped_crime = grouped_crime.loc[grouped_crime['Primary Type'] != 'OTHER OFFENSE']
 
+    # 3. Get the Top 10 for EACH year
+    # Sort by Year and then the Count descending
     top_crime = (
         grouped_crime
-        .sort_values(["Year", "Cummulative Count"], ascending=[True, False])
-        .loc[grouped_crime['Month']==12]
-        .groupby("Year", group_keys=False)
-        .head(11)
+        .sort_values(["Year", "Yearly Count"], ascending=[True, False])
+        .groupby("Year")
+        .head(10)
     )
-    top_crime_list = list(top_crime.loc[(top_crime['Year'] == 2025) & (top_crime['Month']==12)]['Primary Type'])
+    # 4. Create the list for the most recent year (2025)
+    top_crime_list = list(top_crime.loc[top_crime['Year'] == 2025]['Primary Type'])
 
     return top_crime, top_crime_list
 
@@ -347,11 +349,14 @@ fig_choropleth_overall = px.choropleth_mapbox(
 # ---Top Crime Horizontal Bar---
 fig_top_crime_cum = px.bar(
     df_top_crime,
-    x="Cummulative Count",
+    x="Yearly Count",
     y="Primary Type",
+    color="Primary Type",
     animation_frame="Year",
     orientation="h",
-    title="Cummulative Count for Chicago Crime Based on Type (Yearly, Top 11)",
+    title="Top 10 Crime Types by Year",
+    range_x=[0, df_top_crime["Yearly Count"].max() * 1.1],
+    color_discrete_sequence=px.colors.qualitative.Plotly
 )
 fig_top_crime_cum.update_layout(
     xaxis_title="Crime Count",
@@ -533,7 +538,7 @@ elif selected == "Visualization":
     
     # ===== Graph & Plot Analysis =====
     st.title("📊 GRAPH & PLOT VISUALIZATION")
-    st.header("Graph & Plot: Top 11 Crime Occurence Cummulative Occurence")
+    st.header("Graph & Plot: Top 10 Crime Types Over The Years")
     st.plotly_chart(fig_top_crime_cum, use_container_width=True)
     st.header("Graph & Plot: Crime Occurence in Times of Day")
     st.plotly_chart(fig_crime_prc_bar, use_container_width=True)
