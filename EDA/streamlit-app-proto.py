@@ -88,7 +88,7 @@ st.write("With the amount of crimes that are happening in Chicago, it is importa
 st.image(fig_arrest_rate)
 # ========== SUMMARY PAGE ==========
 
-st.title(f"📄Summary page")
+st.title(f"📄Summary")
 st.write("The exploratory data analysis conducted on Chicago's data crime from 2015 to 2025 gained meaningful insights. It was discovered that not only do crimes have " \
 "a seasonality pattern based on temporal trends but certain crime types are more frequent in certain parts of Chicago compared to other neighboring areas. It was later revealed in the end that " \
 "law enforcement authorities still have difficulties in making arrests especially for the most occuring crime types in Chicago namely Theft, Battery, and Criminal Damage. From these discoveries, the team will move forward " \
