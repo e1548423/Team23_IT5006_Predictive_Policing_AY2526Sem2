@@ -1,552 +1,96 @@
 import streamlit as st
-import pandas as pd
-import os
-import seaborn as sns
-import matplotlib.pyplot as plt
+import plotly.io as pio
 import gdown
-import plotly.graph_objects as go
-import plotly.express as px
-from streamlit_option_menu import option_menu
-import json
-import geopandas as gpd
-from shapely import wkt
-import kagglehub
-from kagglehub import KaggleDatasetAdapter
-import datetime
+import os
+from PIL import Image
 
-KAGGLE_ACC = 'rkyz801/'
-DATASET_ID = 'it5006chicagocrimeparquet'
-FILE_LIST = ["ChicagoCrimes(20152025).parquet","ChicagoCommunityArea.parquet"]
+gdrive_dict = {'area_crimetype_heatmap.json':'1TJiv9xgoa6Kaut-Oi8vL8-T2lngMB6zi',
+               'diurnal_heatmap.json':'1RsLPtfXTXiMNHRWcYpHqN45MpPCfXPpD',
+               'crime_choropleth_map.json':'10zDHrCXcWuwe8MtW1ctKf5FPtNS1hLTp',
+               'time_series_seasonality.json':'1l5-chpbi_n3J8yAUytzF8mJD5jqshURA',
+               'top_crime_annual.json':'1nV7WUgQHpmK-DGagmm5sGc5bOnFFeyco',
+               'arrest_rate.png':'1U6JqhoYsaPMThrGGLOm3zpOH2swAk4oI'}
 
 
-@st.cache_data
-def get_data_kaggle_crime(file_id):
-    df = kagglehub.load_dataset(
-        KaggleDatasetAdapter.PANDAS,
-        KAGGLE_ACC + DATASET_ID,
-        file_id,
-        )
-    return df
+file_name = list(gdrive_dict.keys())
 
-# --- Helper to load and save ---
-def load_and_save_data(file_id, local_path, is_crime_data=False):
-    with st.spinner(f"Downloading {file_id} from Kaggle..."):
-        df = get_data_kaggle_crime(file_id)
-        
-        if is_crime_data:
-            # Cleaning: Convert and Filter
-            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-            target_date = datetime.date(2026, 1, 1)
-            df = df[df['Date'].dt.date != target_date]
-        
-        # CRITICAL: Save to disk so os.path.exists() finds it next time
-        df.to_parquet(local_path, index=False)
-        return df
-
-# --- Main Logic for FILE_LIST[0] (Crime Data) ---
-if os.path.exists(FILE_LIST[0]):
-    df_crime = pd.read_parquet(FILE_LIST[0])
-    # Re-verify datetime type after loading from parquet
-    if not pd.api.types.is_datetime64_any_dtype(df_crime['Date']):
-         df_crime['Date'] = pd.to_datetime(df_crime['Date'], errors='coerce')
-    st.success(f"Loaded {len(df_crime):,} crime records from local cache.")
-else:
-    df_crime = load_and_save_data(FILE_LIST[0], FILE_LIST[0], is_crime_data=True)
-    st.success("Crime data downloaded and cached!")
-
-# --- Main Logic for FILE_LIST[1] (Polygon Data) ---
-if os.path.exists(FILE_LIST[1]):
-    df_polygon = pd.read_parquet(FILE_LIST[1])
-    st.success(f"Loaded {len(df_polygon):,} polygon records from local cache.")
-else:
-    df_polygon = load_and_save_data(FILE_LIST[1], FILE_LIST[1])
-    st.success("Polygon data downloaded and cached!")
-
-# --- Unified Refresh Button ---
-if st.sidebar.button("🔄 Clean Cache & Redownload Everything"):
-    for file in FILE_LIST:
-        if os.path.exists(file):
-            os.remove(file)
-    st.rerun()
+if st.button("Reload charts"):
+    st.cache_data.clear()
 
 @st.cache_data
-def process_crime_data(df_main):
-    # 1. Standard Date Processing
-    # df_main['Date_Temp'] = pd.to_datetime(df_main['Date'], format='%m/%d/%Y %I:%M:%S %p', errors='coerce')
-    df_main = df_main.rename(columns={"Date": "Datetime"})
-    
-    # Extract temporal features
-    df_main['Date'] = df_main['Datetime'].dt.date
-    df_main['Time'] = df_main['Datetime'].dt.time
-    df_main['Month'] = df_main['Datetime'].dt.month
-    df_main['Year'] = df_main['Datetime'].dt.year
+def check_file(file_id,file_name):
+    file_type = file_name.split('.')[1]
 
-    # 2. Handling Duplicates (Keep latest based on 'ID')
-    # Sort by Case Number and ID (Descending)
-    df_main = df_main.sort_values(by=['Case Number', 'ID'], ascending=[True, False])
-    
-    # Drop duplicates, keeping the first (which is now the latest due to sort)
-    df_main = df_main.drop_duplicates(subset=['Case Number'], keep='first')
-
-    # 3. Handling Missing Data
-    # Removes any row where critical data is missing (e.g., Latitude, Longitude, or Ward)
-    df_main = df_main.dropna()
-
-    # 4. Memory Optimization: Convert to Categories
-    cols_to_convert = ["IUCR", "Primary Type", "Description", "Beat", "District", "Ward", "Community Area", "FBI Code"]
-    df_main[cols_to_convert] = df_main[cols_to_convert].astype("category")
-    
-    return df_main
-
-
-@st.cache_data
-def process_geo_data(df_main):
-    df_process = df_main
-    df_process.columns = ['GEOMETRY','AREA_NUMBER','COMMUNITY','AREA_NUM_1','SHAPE_AREA','SHAPE_LEN']
-
-    # Convert WKT string to geometry objects and convert area to km2
-    df_process["GEOMETRY_OBJ"] = df_process["GEOMETRY"].apply(wkt.loads)
-    df_process['SHAPE_AREA_FLT'] = df_process['SHAPE_AREA'].apply(lambda x: float(x.replace('.', '').replace(',', '.')))
-    df_process['AREA_KM2']  = round(df_process['SHAPE_AREA_FLT'] * 9.2903e-8,2)
-
-    # Create GeoDataFrame
-    geo_data = gpd.GeoDataFrame(
-        df_process,
-        geometry="GEOMETRY_OBJ",
-        crs="EPSG:4326"
-    )
-
-    return geo_data
-
-@st.cache_data
-def get_crime_data_clean(df_input):
-    df_clean = df_input.dropna()
-    df_clean = df_clean[df_clean["Year"] != 2026]
-    df_clean["Date"] = df_clean["Datetime"].dt.date
-    df_clean["Week"] = df_clean["Datetime"].dt.isocalendar().week
-    df_clean["Month"] = df_clean["Datetime"].dt.month
-    df_clean["Year"] = df_clean["Datetime"].dt.year
-
-    return df_clean
-
-@st.cache_data
-def process_gdf_yearly(df_main, _geo_main):
-    df_crime_yearly = df_main.groupby(['Community Area','Year']).size().reset_index(name='Total Crime')
-
-
-    gdf_yearly = _geo_main.copy().merge(
-        df_crime_yearly,
-        left_on="AREA_NUMBER",
-        right_on="Community Area",
-        how="left"
-    )
-
-    gdf_yearly['Crime/km2'] = round(gdf_yearly['Total Crime'] / (gdf_yearly['AREA_KM2']),0)
-
-    return gdf_yearly
-
-@st.cache_data
-def process_crimes(df_main):
-    # 1. Group by Type and Year to get the total incidents for THAT year only
-    grouped_crime = df_main.groupby(['Primary Type','Year']).size().reset_index(name='Yearly Count')
-
-    # 2. Filter out 'OTHER OFFENSE' (optional)
-    # grouped_crime = grouped_crime.loc[grouped_crime['Primary Type'] != 'OTHER OFFENSE']
-
-    # 3. Get the Top 10 for EACH year
-    # Sort by Year and then the Count descending
-    top_crime = (
-        grouped_crime
-        .sort_values(["Year", "Yearly Count"], ascending=[True, False])
-        .groupby("Year")
-        .head(10)
-    )
-    # 4. Create the list for the most recent year (2025)
-    top_crime_list = list(top_crime.loc[top_crime['Year'] == 2025]['Primary Type'])
-
-    return top_crime, top_crime_list
-
-def time_day_func(hour):
-    if 5 <= hour < 12:
-        return 'Morning'
-    elif 12 <= hour < 17:
-        return 'Afternoon'
-    elif 17 <= hour < 21:
-        return 'Evening'
+    if os.path.exists(file_name):
+        pass
     else:
-        return 'Night'
-
-def crime_percent_time(df_main,crime_list):
-
-    df_time = df_main[['Primary Type','Date','Time','Year','Month']].reset_index(drop=True)
-    df_time['Hour'] = df_time['Time'].apply(lambda x: (x.hour))
-    df_time['Time of Day'] = df_time['Hour'].apply(lambda x: time_day_func(x))
-    df_time['Top Crime'] = df_time['Primary Type'].apply(lambda x: x in crime_list)
-
-    df_time = df_time.loc[df_time['Top Crime'] == True].reset_index(drop=True)
-    df_time_Occurrence = df_time.groupby(['Time of Day','Primary Type']).size().reset_index(name='Occurrence')
-
-    time_of_day_list = ['Morning', 'Afternoon', 'Evening', 'Night']
-    total_crime_day = []
-
-    for time in time_of_day_list:
-        df_temp = df_time_Occurrence.loc[df_time_Occurrence['Time of Day'] == time].reset_index(drop=True)
-        sum_crime = sum(df_temp['Occurrence'])
-        total_crime_day.append(sum_crime)
-
-    crime_Occurrence = []
-
-    for crime in crime_list:
-        df_temp = df_time_Occurrence.loc[df_time_Occurrence['Primary Type'] == crime].reset_index(drop=True)
-        sum_crime = sum(df_temp['Occurrence'])
-        crime_Occurrence.append(sum_crime)
-
-    sum_crime_time = pd.DataFrame({'Primary Type':crime_list,'Sum Crime': crime_Occurrence})
-
-    crime_percentage = pd.merge(df_time_Occurrence, sum_crime_time, on='Primary Type', how='inner')
-    crime_percentage['CrimePercentage'] = round(crime_percentage['Occurrence']/crime_percentage['Sum Crime'],3)*100
-
-    time_summary = crime_percentage.copy().groupby(['Time of Day'])['Occurrence'].sum().reset_index(name='Crime Count')
-
-    return crime_percentage, time_summary
-
-def crime_group(df_main):
-    # Aggregate counts by Year and Month
-    df_group = (
-        df_main.groupby(["Year", "Month"])
-        .size()
-        .reset_index(name="Cases")
-    )
-    return df_group
-
-def crime_cases_group(df_main):
-    # Assuming df_clean already has a 'Datetime' column parsed
-    df_main = df_main.dropna()
-    df_main = df_main[df_main["Year"] != 2026]
-    df_main["Date"] = df_main["Datetime"].dt.date
-    df_main["Week"] = df_main["Datetime"].dt.to_period("W").dt.start_time
-    df_main["Month"] = df_main["Datetime"].dt.to_period("M").astype(str)
-    df_main["Year"] = df_main["Datetime"].dt.year
-
-    # Aggregate counts using df_clean
-    group_date = df_main.groupby("Date").size().reset_index(name="Cases")
-    group_week = df_main.groupby("Week").size().reset_index(name="Cases")
-    group_month = df_main.groupby("Month").size().reset_index(name="Cases")
-    group_year = df_main.groupby("Year").size().reset_index(name="Cases")
-    return group_date, group_week, group_month, group_year
-
-with st.sidebar:
-    selected = option_menu(
-        menu_title="IT5003 Group23",
-        options=["Project Data Overview","Visualization","Summary"],
-        icons=["house","bar-chart-line-fill","file-earmark-bar-graph-fill"],
-        menu_icon="cast",
-        default_index=0
-    )
-
-# ==========Retrieving and Processing Data==========
-df_clean = process_crime_data(df_crime)
-gdf = process_geo_data(df_polygon)
-df_top_crime, top_crime_list = process_crimes(df_clean)
-gdf_plot_yearly = process_gdf_yearly(df_clean, gdf)
-df_time_crime_percentage, df_time_crime_summary = crime_percent_time(df_clean,top_crime_list)
-cases_by_month_year = crime_group(df_clean)
-cases_by_date, cases_by_week, cases_by_month, cases_by_year = crime_cases_group(df_clean)
-
-
-
-# --- Crime Seasonality Trend ---
-fig_time_season = px.line(cases_by_month_year, x="Month", y="Cases", color="Year", markers=True)
-fig_time_season.update_layout(
-    title="Monthly Cases by Year (Seasonality)",
-    xaxis=dict(
-        tickmode="array",
-        tickvals=list(range(1, 13)),
-        ticktext=["Jan","Feb","Mar","Apr","May","Jun",
-                  "Jul","Aug","Sep","Oct","Nov","Dec"]
-    ),
-    legend_title="Year",
-    hovermode="x unified"
-)
-
-fig_crime_cases = go.Figure()
-fig_crime_cases.add_trace(go.Scatter(x=cases_by_date["Date"], y=cases_by_date["Cases"],
-                         mode="lines", name="By Date", visible=True))
-fig_crime_cases.add_trace(go.Scatter(x=cases_by_week["Week"], y=cases_by_week["Cases"],
-                         mode="lines", name="By Week", visible=False))
-fig_crime_cases.add_trace(go.Scatter(x=cases_by_month["Month"], y=cases_by_month["Cases"],
-                         mode="lines", name="By Month", visible=False))
-fig_crime_cases.add_trace(go.Scatter(x=cases_by_year["Year"], y=cases_by_year["Cases"],
-                         mode="lines", name="By Year", visible=False))
-# Add dropdown menu to toggle visibility
-fig_crime_cases.update_layout(
-    updatemenus=[
-        dict(
-            type="dropdown",
-            x=0.1, y=1.15,
-            buttons=[
-                dict(label="Date", method="update",
-                     args=[{"visible": [True, False, False, False]},
-                           {"title": "Cases by Date", 
-                            "xaxis": {"type": "date", "autorange": True}}]),
-                dict(label="Week", method="update",
-                     args=[{"visible": [False, True, False, False]},
-                           {"title": "Cases by Week",
-                            "xaxis": {"type": "date", "autorange": True}}]),
-                dict(label="Month", method="update",
-                     args=[{"visible": [False, False, True, False]},
-                           {"title": "Cases by Month",
-                            "xaxis": {"type": "category", "autorange": True}}]),
-                dict(label="Year", method="update",
-                     args=[{"visible": [False, False, False, True]},
-                           {"title": "Cases by Year",
-                            "xaxis": {"type": "date", "autorange": True}}]),
-            ]
-        )
-    ]
-)
-
-
-# --- Crime Density Map ---
-fig_density = px.density_mapbox(
-    df_clean,
-    lat="Latitude",
-    lon="Longitude",
-    radius=10,
-    hover_data=["Year", "Date"],
-    color_continuous_scale="Viridis",
-    mapbox_style="open-street-map",
-    zoom=9,   # higher zoom = closer view
-    center={"lat": 41.8781, "lon": -87.6298},  # Chicago coordinates
-    height=600,
-    title="Incident Density Map - Chicago Focus",
-    animation_frame="Year"   # optional: play by year
-)
-
-# ---Choropleth Map Figure Preparation---
-geojson = json.loads(gdf.copy().to_json())
-fig_choropleth_overall = px.choropleth_mapbox(
-    gdf_plot_yearly,
-    geojson=geojson,
-    locations="AREA_NUMBER",            
-    featureidkey="properties.AREA_NUMBER",
-    color="Crime/km2",
-    animation_frame="Year",
-    color_continuous_scale="Reds",
-    mapbox_style="open-street-map",
-    center={"lat": 41.828, "lon": -87.6298},
-    zoom=9,
-    range_color=(0, max(gdf_plot_yearly['Crime/km2'])),
-    opacity=0.85,
-    hover_name="COMMUNITY",
-    hover_data={"Total Crime": True,
-                "AREA_KM2": True},
-    height=650,
-    width=1000,
-    title="Crime Density by Community Area Over The Years"
-)
-
-# ---Top Crime Horizontal Bar---
-fig_top_crime_cum = px.bar(
-    df_top_crime,
-    x="Yearly Count",
-    y="Primary Type",
-    color="Primary Type",
-    animation_frame="Year",
-    orientation="h",
-    title="Top 10 Crime Types by Year",
-    range_x=[0, df_top_crime["Yearly Count"].max() * 1.1],
-    color_discrete_sequence=px.colors.qualitative.Plotly
-)
-fig_top_crime_cum.update_layout(
-    xaxis_title="Crime Count",
-    yaxis_title="Crime Type",
-    height=800,
-    width=1000
-)
-fig_top_crime_cum.update_xaxes(tickformat=",d")
-fig_top_crime_cum.update_yaxes(categoryorder="total ascending")
-
-# --- Crime Time of Day Percentage Occurence Bar ---
-fig_crime_prc_bar = px.bar(
-    df_time_crime_percentage,
-    x="CrimePercentage",
-    y="Primary Type",
-    color="Time of Day",
-    orientation="h",
-    title="Crime Distribution by Time of Day",
-    category_orders={
-        "Time of Day": [
-            "Morning",
-            "Afternoon",
-            "Evening",
-            "Night",
-        ],
-        "Primary Type":top_crime_list
-    },
-        color_discrete_map={
-        "Morning": "#2ECC71",
-        "Afternoon": "#F1C40f",
-        "Evening": "#e67e22",
-        "Night": "#213D97"
-    }
-
-)
-fig_crime_prc_bar.update_layout(
-    xaxis_title="Percentage of Crime (%)",
-    yaxis_title="Crime Type",
-    barmode="stack",
-    height=600
-)
-fig_crime_prc_bar.for_each_trace(
-    lambda t: t.update(
-        name={
-            "Morning": "Morning (5AM–9AM)",
-            "Afternoon": "Afternoon (12PM–5PM)",
-            "Evening": "Evening (5PM–9PM)",
-            "Night": "Night (9PM–5AM)",
-        }[t.name]
-    )
-)
-
-
-# --- Crime Time of Day Summary PieChart ---
-fig_crime_pie = px.pie(
-    df_time_crime_summary,
-    names="Time of Day",
-    values="Crime Count",
-    title="Crime Occurrences by Time of Day in Chicago 2015-2025",
-    color="Time of Day",
-        category_orders={
-        "Time of Day": [
-            "Morning",
-            "Afternoon",
-            "Evening",
-            "Night",
-        ]
-    },
-    color_discrete_map={
-        "Morning": "#2ECC71",
-        "Afternoon": "#F1C40f",
-        "Evening": "#e67e22",
-        "Night": "#213D97"
-    }
-)
-fig_crime_pie.update_traces(textinfo="label+percent")
-fig_crime_pie.update_layout(height=600,width=600)
-
-
-# ========== HOME PAGE ==========
-if selected == "Project Data Overview":
-    st.title("Chicago Crime Dataset - Exploratory Data Analysis")
-
-    st.write("This streamlit application's main objective is to conduct an Exploratory Data Analysis (EDA) on crimes that are occuring "
-    "in Chicago from from 2015 - 2025. The main data is obtained from the open source data provided by Chicago Data Portal.")
-    st.write(f"The dataset contains {df_crime.shape[0]} rows and {df_crime.shape[1]} columns")
-    # ===Dataset Overview===
-    st.header("Column Names and Data Types")
-    st.table(pd.DataFrame({"Column Name": df_crime.columns, "Data Type": df_crime.dtypes.astype(str).values}))
-
-    # # ===Data Preview with Date Range Filter=== (Optional)
-    # st.header("Data Preview with Date Range")
-
-    # # Ensure date column is actually datetime object and get min and max
-    # df_crime["Date"] = pd.to_datetime(df_crime["Date"])
-    # min_date = df_crime["Date"].min().to_pydatetime()
-    # max_date = df_crime["Date"].max().to_pydatetime()
-
-    # date_range = st.slider(
-    #     "Select date range",
-    #     min_value=min_date,
-    #     max_value=max_date,
-    #     value=(min_date, max_date)
-    # )
-
-    # filtered_range_df = df_crime[
-    #     (df_crime["Date"] >= date_range[0]) & (df_crime["Date"] <= date_range[1])
-    # ]
-
-    # st.write(f"Showing {len(filtered_range_df)} rows between {date_range[0]} and {date_range[1]}:")
-    # st.dataframe(filtered_range_df.head(50))
-
-    # ===Missing Values===
-    st.header("Missing Values by Year")
-
-    st.write("The following table displays the number of missing values for each column, grouped by year, to understand the trend of missing data " \
-    "over different years. It is discovered that the amount of missing data is small compared to the whole dataset which will not distort the overall EDA when removed. " \
-    "Also, this simplifies workflow - avoid complexity of imputing values which can introduce bias if not done carefully.")
-
-    # Ensure date column is actually datetime object and get min and max
-    df_crime["Date"] = pd.to_datetime(df_crime["Date"])
-
-    if "Date" in df_crime.columns:
-        missing_by_year = (
-            df_crime.assign(Year=df_crime["Date"].dt.year)
-            .groupby("Year")
-            .apply(lambda x: x.isnull().sum())
-        )
-        #st.write(missing_by_year)
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-        sns.heatmap(missing_by_year.T, cmap="Reds", annot=True, fmt="d", ax=ax)
-        ax.set_title("Missing Values by Year")
-        st.pyplot(fig)
-
-    # ===Duplicate Records Analysis===
-    st.header("Duplicate Records")
-
-    # Calculate metrics
-    total_rows = len(df_crime)
-    # keep=False ensures we count every instance of a duplicate for the count
-    total_duplicate_rows = df_crime.duplicated(subset=['Case Number'], keep=False).sum()
-    unique_duplicates = df_crime.duplicated(subset=['Case Number']).sum()
-    duplicate_pct = (unique_duplicates / total_rows)
-
-    # Display as metrics
-    col1, col2 = st.columns(2)
-    col1.metric("Duplicate Rows Found", unique_duplicates)
-    col2.metric("Data Redundancy", f"{duplicate_pct:.4%}")
-
-    if unique_duplicates > 0:
-        st.warning(f"Found {unique_duplicates} redundant records. It is recommended to remove these before proceeding with the EDA.")
+        url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        gdown.download(url, file_name, quiet=False)
         
-        # Show a sample of the duplicates
-        if st.checkbox("Show sample of duplicate records"):
-            sample_dups = df_crime[df_crime.duplicated(subset=['Case Number'], keep=False)].sort_values("Case Number")
-            st.dataframe(sample_dups.head(20))
+    if file_type == 'json':
+        file_read = pio.read_json(file_name)
+    else:
+        file_read = Image.open(file_name)
 
-# ========== VISUALIZATION PAGE ==========
-
-elif selected == "Visualization":
-
-    # ===== Spatial Analysis =====
-    st.title("🗺️ SPATIAL VISUALIZATION")
-    # Crime Density (crimes/kg2) Choropleth Map of Chicago 
-    st.header("Spatial Analysis: Choropleth")
-    st.plotly_chart(fig_choropleth_overall, use_container_width=True)
-
-    st.header("Spatial Analysis: Density Map")
-    st.plotly_chart(fig_density, use_container_width=True)
-
-    # ===== Time Series Analysis =====
-    st.title("⏱️ TIME SERIES VISUALIZATION")
-    
-    st.header("Time Series Analysis: Cases Over Time")
-    st.plotly_chart(fig_crime_cases, use_container_width=True)
-    st.header("Time Series Analysis: Seasonality Trend")
-    st.plotly_chart(fig_time_season, use_container_width=True)
-    
-    # ===== Graph & Plot Analysis =====
-    st.title("📊 GRAPH & PLOT VISUALIZATION")
-    st.header("Graph & Plot: Top 10 Crime Types Over The Years")
-    st.plotly_chart(fig_top_crime_cum, use_container_width=True)
-    st.header("Graph & Plot: Crime Occurence in Times of Day")
-    st.plotly_chart(fig_crime_prc_bar, use_container_width=True)
-    st.header("Graph & Plot: Crime Occurence Overall Percentage")
-    st.plotly_chart(fig_crime_pie, use_container_width=True)
+    return file_read
 
 
+
+fig_heatmap_area_crime = check_file(gdrive_dict[file_name[0]],file_name[0])
+fig_heatmap_diurnal = check_file(gdrive_dict[file_name[1]],file_name[1])
+fig_choropleth = check_file(gdrive_dict[file_name[2]],file_name[2])
+fig_time_series = check_file(gdrive_dict[file_name[3]],file_name[3])
+fig_top_crime = check_file(gdrive_dict[file_name[4]],file_name[4])
+fig_arrest_rate = check_file(gdrive_dict[file_name[5]],file_name[5])
+
+# ========== MAIN PAGE ==========
+st.title("📊 IT5006 Group 23 - Chicago Crime")
+st.write("An exploratory data analysis was conducted towards Chicago's Crime dataset (2015-2025) provided by the open-source Chicago Data Portal. " \
+"In this analysis, the team's main focus is to gain insights of how crimes behave in Chicago. The insights that the team would try to uncover are where crimes occur, " \
+"what types of crime occur, and when do they happen.")
+
+st.header("Crime Density Choropleth Map of Chicago")
+st.write("A choropleth map of Chicago's crime density (crime/km²) is plotted to visualize the spatial distribution." \
+"By adjusting the year filter, it is apparent that areas with initially high crime density continue to experience more crime than lower-density areas in the following years. The **central and near-shore areas of Chicago have consistent high crime density**.")
+st.plotly_chart(fig_choropleth, width='stretch')
+
+st.header("Crime Occurence Time Series Seasonality")
+st.write("When plotted into a time series, it can be seen that crime occurence have a seasonality pattern. The most notable seasonality pattern is when the crime " \
+"occurence is plotted by Months. Crimes are at their lowest during the **first few months of the year**  and it gradually increases toward the middle of the year, **peaking in July and August most of the time**. Finally, it continues to decrease by the end of" \
+" the year and the pattern continues for the following years.")
+st.plotly_chart(fig_time_series, width='stretch')
+
+st.header("Highest Crime in Chicago Annually")
+st.write("There are many crime classifications from the dataset and to identify each crime type will become troublesome since some can be classified as noise if it does not bring any value into the EDA. To ensure that " \
+"the crime types are consistent, the crime types are ranked and the top 10 is the main focus of the EDA. It appears that the crime types are consistent throughout the years " \
+"with **Theft, Battery, and Criminal Damage** ranking the highest while **others remain in the top 10 but interchange in ranking**.")
+st.plotly_chart(fig_top_crime, width='stretch')
+
+st.header("Crime Heatmap of Chicago Community Area")
+st.write("To understand the amount of crimes that happened in each Chicago Community area, a heatmap was made. Although it only covers the top 10 community area with the highest crime occurence, "
+"it still provides a guidance for the EDA. For example:")
+st.markdown("&nbsp;&nbsp;&nbsp;&nbsp;• Theft frequently occurs in Austin, Near North Side, Near West Side, Loop, and West Town")
+st.markdown("&nbsp;&nbsp;&nbsp;&nbsp;• Battery usually happens in Austin, South Shore North Lawndale, and Humboldt Park") 
+st.markdown("&nbsp;&nbsp;&nbsp;&nbsp;• Narcotic crimes are highest in North Lawndale and Humboldt Park.")
+st.write("This suggests that **certain crime types are more prevalent in some areas more than others**.")
+st.plotly_chart(fig_heatmap_area_crime, width='stretch')
+
+st.header("Heatmap of Diurnal Crime Occurence")
+st.write("The following heatmap provides information how crime types are distributed throughout the times of day and the days of week. From the heatmap, " \
+"it is understood that crime rates vary by type depending on the time of day. For example, deceptive crimes usually occur in the middle of the afternoon while criminal " \
+"damage usually happens from the evening until midnight.")
+st.plotly_chart(fig_heatmap_diurnal, width='stretch')
+
+st.header("Crime Arrest Rate")
+st.write("With the amount of crimes that are happening in Chicago, it is important to understand if the crimes are handled properly. Unfortunately, it was " \
+"discovered that the arrest rate for the top 10 most occuring crime are in the lower ranks based on the following bar chart. This signifies the importance " \
+"of estimating and predicting where and when crimes can happen. This will change how crime policing can transform from a reactive approach to a preventive approach.")
+st.image(fig_arrest_rate)
 # ========== SUMMARY PAGE ==========
-else:
-    st.title(f"Summary page is still empty 🙂, be patient")
+
+st.title(f"📄Summary page")
+st.write("The exploratory data analysis conducted on Chicago's data crime from 2015 to 2025 gained meaningful insights. It was discovered that not only do crimes have " \
+"a seasonality pattern based on temporal trends but certain crime types are more frequent in certain parts of Chicago compared to other neighboring areas. It was later revealed in the end that " \
+"law enforcement authorities still have difficulties in making arrests especially for the most occuring crime types in Chicago namely Theft, Battery, and Criminal Damage. From these discoveries, the team will move forward " \
+"in possibly developing an ML model that can predict where and when potential crimes may happen, giving law enforcements a shift in strategy from reactive to preventive action.")
 
