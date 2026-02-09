@@ -28,7 +28,7 @@ https://data.cityofchicago.org/Facilities-Geographic-Boundaries/chicago-Communit
 * Arrest rates for the most occuring crime types remain in the lower end
 
 ## Repository Structure
-.
+```
 ├── EDA/
 │ ├── 0. DatasetDownload.ipynb
 │ ├── 1. Exploratory Data Analysis.ipynb
@@ -40,7 +40,7 @@ https://data.cityofchicago.org/Facilities-Geographic-Boundaries/chicago-Communit
 │ └── ProjectData/
 ├── .gitignore
 └── README.md
-
+```
 * ProjectData folder is created when running "0. DatasetDownload.ipynb" to store dataset from kaggle
 * jsonvis folder is created when running "1. Exploratory Data Analysis.ipynb" or "1.1 EDA Summarized.ipynb" to save figures locally
 
