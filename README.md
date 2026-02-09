@@ -30,19 +30,20 @@ https://data.cityofchicago.org/Facilities-Geographic-Boundaries/chicago-Communit
 ## Repository Structure
 .
 ├── EDA/
-│   └── 0. DatasetDownload.ipynb
-│   └── 1. Exploratory Data Analysis.ipynb
-│   └── 1.1 EDA Summarized.ipynb
-│   └── README.md
-│   └── requirements.txt
-│   └── streamlit-app.py
-│   └── jsonvis/*
-│   └── ProjectData/*
+│   ├── 0. DatasetDownload.ipynb
+│   ├── 1. Exploratory Data Analysis.ipynb
+│   ├── 1.1 EDA Summarized.ipynb
+│   ├── README.md
+│   ├── requirements.txt
+│   ├── streamlit-app.py
+│   ├── jsonvis/
+│   └── ProjectData/
 ├── .gitignore
 └── README.md
 
-* jsonvis folder saves json files for the visualizations locally when running "1. Exploratory Data Analysis.ipynb" or "1.1 EDA Summarized.ipynb"
-* ProjectData folder saves the dataset which can be acquired by running "0. DatasetDownload.ipynb"
+* ProjectData folder is created when running "0. DatasetDownload.ipynb" to store dataset from kaggle
+* jsonvis folder is created when running "1. Exploratory Data Analysis.ipynb" or "1.1 EDA Summarized.ipynb" to save figures locally
+
 
 ## How to Run
 
