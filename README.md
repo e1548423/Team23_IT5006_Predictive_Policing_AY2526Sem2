@@ -30,14 +30,14 @@ https://data.cityofchicago.org/Facilities-Geographic-Boundaries/chicago-Communit
 ## Repository Structure
 .
 ├── EDA/
-│   ├── 0. DatasetDownload.ipynb
-│   ├── 1. Exploratory Data Analysis.ipynb
-│   ├── 1.1 EDA Summarized.ipynb
-│   ├── README.md
-│   ├── requirements.txt
-│   ├── streamlit-app.py
-│   ├── jsonvis/
-│   └── ProjectData/
+│ ├── 0. DatasetDownload.ipynb
+│ ├── 1. Exploratory Data Analysis.ipynb
+│ ├── 1.1 EDA Summarized.ipynb
+│ ├── README.md
+│ ├── requirements.txt
+│ ├── streamlit-app.py
+│ ├── jsonvis/
+│ └── ProjectData/
 ├── .gitignore
 └── README.md
 
