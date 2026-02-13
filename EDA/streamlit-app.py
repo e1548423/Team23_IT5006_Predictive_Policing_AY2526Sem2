@@ -9,8 +9,8 @@ gdrive_dict = {'area_crimetype_heatmap.json':'1TJiv9xgoa6Kaut-Oi8vL8-T2lngMB6zi'
                'crime_choropleth_map.json':'10zDHrCXcWuwe8MtW1ctKf5FPtNS1hLTp',
                'time_series_seasonality.json':'1l5-chpbi_n3J8yAUytzF8mJD5jqshURA',
                'top_crime_annual.json':'1nV7WUgQHpmK-DGagmm5sGc5bOnFFeyco',
-               'arrest_rate.png':'1U6JqhoYsaPMThrGGLOm3zpOH2swAk4oI'}
-
+               'arrest_rate.png':'1U6JqhoYsaPMThrGGLOm3zpOH2swAk4oI',
+               'treemap_crime.json':'1I5aYpwtBxWm44qKGewgq3g_NH91SoHiL'}
 
 file_name = list(gdrive_dict.keys())
 
@@ -42,6 +42,7 @@ fig_choropleth = check_file(gdrive_dict[file_name[2]],file_name[2])
 fig_time_series = check_file(gdrive_dict[file_name[3]],file_name[3])
 fig_top_crime = check_file(gdrive_dict[file_name[4]],file_name[4])
 fig_arrest_rate = check_file(gdrive_dict[file_name[5]],file_name[5])
+fig_treemap = check_file(gdrive_dict[file_name[6]],file_name[6])
 
 # ========== MAIN PAGE ==========
 st.title("📊 IT5006 Group 23 - Chicago Crime")
@@ -86,6 +87,14 @@ st.write("With the amount of crimes that are happening in Chicago, it is importa
 "discovered that the arrest rate for the top 10 most occuring crime are in the lower ranks based on the following bar chart. This signifies the importance " \
 "of estimating and predicting where and when crimes can happen. This will change how crime policing can transform from a reactive approach to a preventive approach.")
 st.image(fig_arrest_rate)
+# ========== SUMMARY PAGE ==========
+
+st.header("Crime Arrest Rate Treemap")
+st.write("The treemap visualizes crime arrest rates based on domesticity and location types. Criminal activities committed in public areas such as streets, sidewalks, "
+"and outside domestic locations were reported to have the lowest rates of arrests, likely due to the strangers' capacity to run away anytime. Domestic incidents occurring " \
+"within apartments or houses are recorded to have average arrest rates of 5-20%. Retail stores take the lead in the number of arrest rates of 20% or more, possibly due to " \
+"the presence of security and surveillance cameras at the scene.")
+st.plotly_chart(fig_treemap)
 # ========== SUMMARY PAGE ==========
 
 st.title(f"📄Summary")
