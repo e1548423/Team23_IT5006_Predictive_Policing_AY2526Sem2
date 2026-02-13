@@ -92,7 +92,7 @@ st.image(fig_arrest_rate)
 st.header("Crime Arrest Rate Treemap")
 st.write("The treemap visualizes crime arrest rates based on domesticity and location types. Criminal activities committed in public areas such as streets, sidewalks, "
 "and outside domestic locations were reported to have the lowest rates of arrests, likely due to the strangers' capacity to run away anytime. Domestic incidents occurring " \
-"within apartments or houses are recorded to have average arrest rates of 5-20%. Retail stores take the lead in the number of arrest rates of 20% or more, possibly due to " \
+"within apartments or houses are recorded to have average arrest rates of 5-20%. Retail stores generally in much desireable condition with arrest rate of at least 20%, possibly due to " \
 "the presence of security and surveillance cameras at the scene.")
 st.plotly_chart(fig_treemap)
 # ========== SUMMARY PAGE ==========

@@ -10,7 +10,7 @@
 
 3. Run the app
    ```
-   streamlit run streamlit_app.py
+   streamlit run streamlit-app.py
    ```
    This will start a local server. You’ll see output like: Local URL: http://localhost:8501 Network URL: http://192.168.x.x:8501. Open the Local URL    in your browser to view the app.
 
