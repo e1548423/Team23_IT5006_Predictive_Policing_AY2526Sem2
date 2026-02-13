@@ -27,7 +27,7 @@ https://data.cityofchicago.org/Facilities-Geographic-Boundaries/chicago-Communit
 * Certain crime types are centralized in certain Community Area
 * Arrest rates for the most occuring crime types remain in the lower end
 
-## Repository Structure
+## Code Structure
 ```
 ├── EDA/
 │ ├── 0. DatasetDownload.ipynb
@@ -41,15 +41,43 @@ https://data.cityofchicago.org/Facilities-Geographic-Boundaries/chicago-Communit
 ├── .gitignore
 └── README.md
 ```
-* ProjectData folder is created when running "0. DatasetDownload.ipynb" to store dataset from kaggle
-* jsonvis folder is created when running "1. Exploratory Data Analysis.ipynb" or "1.1 EDA Summarized.ipynb" to save figures locally
-
+- ProjectData folder is created when running "0. DatasetDownload.ipynb" to store dataset from kaggle
+- jsonvis folder is created when running "1. Exploratory Data Analysis.ipynb" to save figures locally
 
 ## How to Run
 
-Users are able to view the complete process and visualization the team produced by following these steps:
-1. Creating a virtual environment complete with the libraries included in requirements.txt, details can be read from the README.md file inside EDA folder
-2. run 0. DatasetDownload.ipynb
-3. run 1. Exploratory Data Analysis.ipynb
+1. Clone or navigate to project directory
+   ```
+   cd /folder
+   ```
 
-The result of the EDA has been summarized and can be viewed from the streamlit live link: https://appdeploytest-gepl8crjupkdwdcbadmtre.streamlit.app/.
+2. Create a virtual environment (optional)
+   ```
+   python -m venv venv
+   ```
+
+3. Activate the virtual environment (Windows)
+   ```
+   venv\Scripts\activate
+   ```
+
+4. Install requirements
+   ```
+   pip install -r requirements.txt
+   ```
+
+5. run "0. DatasetDownload.ipynb" to download dataset files locally
+
+6. run "1. Exploratory Data Analysis.ipynb" to see all of the visualizations made for this project
+
+7. run streamlit app
+   ```
+   change directory to EDA by typing in the terminal "cd EDA"
+   run the streamlit application by typing in the terminal: "streamlit run streamlit-app.py"
+   ```
+   This will start a local server. You’ll see output like: Local URL: http://localhost:8501 Network URL: http://192.168.x.x:8501. Open the Local URL    in your browser to view the app.
+
+
+#### Note: This application implements a local caching strategy. Upon the initial run (may take up to 5 minutes), the raw .csv dataset is fetched from Google Drive and serialized into the .parquet format. Subsequent launches prioritize this local Parquet cache, significantly reducing I/O overhead and memory usage by bypassing the 100MB+ cloud download.
+
+### The result of the EDA can be viewed from the streamlit live link: https://appdeploytest-gepl8crjupkdwdcbadmtre.streamlit.app/.
