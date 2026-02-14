@@ -78,6 +78,6 @@ https://data.cityofchicago.org/Facilities-Geographic-Boundaries/chicago-Communit
    This will start a local server. You’ll see output like: Local URL: http://localhost:8501 Network URL: http://192.168.x.x:8501. Open the Local URL    in your browser to view the app.
 
 
-#### Note: This application implements a local caching strategy. Upon the initial run (may take up to 5 minutes), the raw .csv dataset is fetched from Google Drive and serialized into the .parquet format. Subsequent launches prioritize this local Parquet cache, significantly reducing I/O overhead and memory usage by bypassing the 100MB+ cloud download.
-
-### The result of the EDA can be viewed from the streamlit live link: https://appdeploytest-gepl8crjupkdwdcbadmtre.streamlit.app/.
+Note:
+- The streamlit application implements a local caching strategy. Upon the initial run (may take up to 5 minutes), the raw .csv dataset is fetched from Google Drive and serialized into the .parquet format. Subsequent launches prioritize this local Parquet cache, significantly reducing I/O overhead and memory usage by bypassing the 100MB+ cloud download.
+- The result of the EDA can be viewed from the streamlit live link: https://appdeploytest-gepl8crjupkdwdcbadmtre.streamlit.app/.
