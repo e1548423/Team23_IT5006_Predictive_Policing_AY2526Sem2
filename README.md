@@ -3,16 +3,14 @@
 This repository contains IT5006 group project involving Exploratory Data Analysis for Chicago crime activity from 2015 to 2025 developed by Group 23.
 
 ## Abstract
-The objective of the project is to gain insights and patterns for Chicago's crime activity from an intial assumption and curiosty which is later confirmed by creating visualizations based on geospatial, temporal, and other data. Through EDA, the team gained meaningful insights that strengthens the team's understanding of how crime operates in Chicago.
+The objective of the project is to gain meaningful insights and uncover patterns for Chicago's crime activity by investigating initial hypothesis through visualizations based on geospatial, temporal, and other relevant data.
 
 ## Dataset
 The datasets were acquired from Chicago's Data Portal include:
 
-* Chicago crime dataset
-https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-Present/ijzp-q8t2/about_data
+- [Chicago Crime Dataset](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-Present/ijzp-q8t2/about_data)
 
-* Chicago community area map boundary
-https://data.cityofchicago.org/Facilities-Geographic-Boundaries/chicago-Community-areas/m39i-3ntz
+- [Chicago Community Area Boundaries (Geospatial Data)](https://data.cityofchicago.org/Facilities-Geographic-Boundaries/chicago-Community-areas/m39i-3ntz)
 
 ## Objectives
 * Identify spatial crime patterns across Chicago community areas
