@@ -1,0 +1,49 @@
+{
+  "model": "XGBoost",
+  "threshold": 0.15,
+  "precision": 0.1974,
+  "recall": 0.4366,
+  "f1": 0.2719,
+  "roc_auc": 0.7817,
+  "lift_over_random": 2.95,
+  "base_rate": 0.067,
+  "trained_on": "2022-2024",
+  "test_set": "2025",
+  "total_tiles": 857,
+  "feature_cols": [
+    "is_afternoon_night",
+    "is_overnight",
+    "lag_1d",
+    "rolling_7d_mean_norm",
+    "rolling_30d_mean_norm",
+    "tile_crime_density_percentile",
+    "tile_momentum",
+    "day_sin",
+    "day_cos",
+    "month_sin",
+    "month_cos",
+    "neighbor_lag_1d_norm"
+  ],
+  "categorical_cols": [
+    "is_afternoon_night",
+    "is_overnight"
+  ],
+  "numeric_cols": [
+    "lag_1d",
+    "rolling_7d_mean_norm",
+    "rolling_30d_mean_norm",
+    "tile_crime_density_percentile",
+    "tile_momentum",
+    "day_sin",
+    "day_cos",
+    "month_sin",
+    "month_cos",
+    "neighbor_lag_1d_norm"
+  ],
+  "shift_hours": {
+    "morning_noon": "06:00-13:59",
+    "afternoon_night": "14:00-21:59",
+    "overnight": "22:00-05:59"
+  },
+  "packaged_at": "2026-03-06T16:47:53.963875"
+}
