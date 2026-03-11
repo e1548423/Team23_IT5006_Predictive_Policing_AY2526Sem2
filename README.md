@@ -1,33 +1,20 @@
 # IT5006Group Chicago Crime Analysis
 
-This repository contains IT5006 group project involving Exploratory Data Analysis for Chicago crime activity from 2015 to 2025 developed by Group 23.
+This repository contains IT5006 group project involving Data Analysis for Chicago crime activity from 2015 to 2025, developed by Group 23. The work is organized based on the project's milestones, categorized into two main Folders:
 
-## Abstract
-The objective of the project is to gain meaningful insights and uncover patterns for Chicago's crime activity by investigating initial hypothesis through visualizations based on geospatial, temporal, and other relevant data.
+1. Exploratory Data Analysis (EDA) – located in the EDA/ folder.
+2. Machine Learning Model (ML) – located in the ML/ folder.
 
-## Dataset
-The datasets were acquired from Chicago's Data Portal include:
+Each folder has their own README.md file for further details.
 
-- [Chicago Crime Dataset](https://data.cityofchicago.org/Public-Safety/Crimes-2001-to-Present/ijzp-q8t2/about_data)
-
-- [Chicago Community Area Boundaries (Geospatial Data)](https://data.cityofchicago.org/Facilities-Geographic-Boundaries/chicago-Community-areas/m39i-3ntz)
-
-## Objectives
-* Identify spatial crime patterns across Chicago community areas
-* Analyze temporal crime trends
-* Examine the most frequent crime types over time
-* Explore relationships between crime occurrence and arrest rates
-
-## Key Findings
-* High crime-density areas remain consistent over time
-* Crime shows strong seasonality, peaking in mid-year, especially in July and August
-* Theft, Battery, and Criminal Damage crimes dominate across all years compared to others
-* Certain crime types are centralized in certain Community Area
-* Arrest rates for the most occuring crime types remain in the lower end
+# IT5006Group Chicago Crime Analysis
+The goal of each milestone includes:
+1. EDA   : Gain meaningful insights and uncover patterns to understand the nature of crime data in Chicago.
+2. ML    : Develop a machine learning model that can be an additional tool to help law enforcement in crime policing.
 
 ## Code Structure
 ```
-├── EDA/
+├── EDA/ *Folder contains essential files to conduct EDA with a provided streamlit app deployment.
 │ ├── 0. DatasetDownload.ipynb
 │ ├── 1. Exploratory Data Analysis.ipynb
 │ ├── 1.1 EDA Summarized.ipynb
@@ -36,46 +23,14 @@ The datasets were acquired from Chicago's Data Portal include:
 │ ├── streamlit-app.py
 │ ├── jsonvis/
 │ └── ProjectData/
+├── ML/ *Folder contains notebooks for ML training and analysis.
+│ ├── Model
+│ │ ├── deployment *pipeline and metada of the final chosen ML model
+│ │ ├── Inference_Engine_UI.ipynb
+│ │ └── Crime_Prediction_Training (Violent Crime).ipynb
+│ ├── README.md
+│ └── requirements.txt
+├── ProjectData/ *Folder contains raw data after running 0. DatasetDownload.ipynb
 ├── .gitignore
 └── README.md
 ```
-- ProjectData folder is created when running "0. DatasetDownload.ipynb" to store dataset from kaggle
-- jsonvis folder is created when running "1. Exploratory Data Analysis.ipynb" to save figures locally
-
-## How to Run
-
-1. Clone or navigate to project directory
-   ```
-   cd /folder
-   ```
-
-2. Create a virtual environment (optional)
-   ```
-   python -m venv venv
-   ```
-
-3. Activate the virtual environment (Windows)
-   ```
-   venv\Scripts\activate
-   ```
-
-4. Install requirements
-   ```
-   pip install -r requirements.txt
-   ```
-
-5. run "0. DatasetDownload.ipynb" to download dataset files locally
-
-6. run "1. Exploratory Data Analysis.ipynb" to see all of the visualizations made for this project
-
-7. run streamlit app
-   ```
-   change directory to EDA by typing in the terminal "cd EDA"
-   run the streamlit application by typing in the terminal: "streamlit run streamlit-app.py"
-   ```
-   This will start a local server. You’ll see output like: Local URL: http://localhost:8501 Network URL: http://192.168.x.x:8501. Open the Local URL    in your browser to view the app.
-
-
-Note:
-- The streamlit application implements a local caching strategy. Upon the initial run (may take up to 5 minutes), the raw .csv dataset is fetched from Google Drive and serialized into the .parquet format. Subsequent launches prioritize this local Parquet cache, significantly reducing I/O overhead and memory usage by bypassing the 100MB+ cloud download.
-- The result of the EDA can be viewed from the streamlit live link: https://appdeploytest-gepl8crjupkdwdcbadmtre.streamlit.app/.
