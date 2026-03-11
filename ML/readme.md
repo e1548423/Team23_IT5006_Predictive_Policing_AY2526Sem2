@@ -1,3 +1,18 @@
+# Python Version and Libraries
+Python version 3.11 is recommended to run the notebooks within the ML folder. To setup the virtual environment including the libraries, type the prompts into the terminal following these steps:
+
+```
+1. Create virtual environment with Python version 3.11
+py -3.11 -m venv .venvml
+
+2. Activate virtual environment
+.venvml\Scripts\activate
+
+3. Install all the required libraries according to the recommended versions
+pip install -r Team23_IT5006_Predictive_Policing_AY2526Sem2\ML\requirements.txt
+
+```
+
 # Spatio-Temporal Violent Crime Prediction
 
 Predict the probability of violent crime occurring in a specific area during a specific patrol shift, and dispatch patrol units to high-risk tiles for proactive presence.
