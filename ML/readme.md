@@ -35,7 +35,7 @@ The pipeline is split into two notebooks:
 
 ### Data
 
-Ensure the following files are in `../../ProjectData/` relative to the training notebook (i.e., two directories up):
+Ensure the following files are in `../../ProjectData/` relative to the training notebook (i.e., two directories up) after running ../../EDA/0. DatasetDownload.ipynb:
 
 ```
 ProjectData/
