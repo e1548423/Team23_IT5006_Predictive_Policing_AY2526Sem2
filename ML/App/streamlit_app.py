@@ -1,16 +1,13 @@
 # =============================================================================
 # CHICAGO VIOLENT CRIME PREDICTION — STREAMLIT PATROL DISPATCH DASHBOARD
 #
-# Inference-only app: loads pre-trained XGBoost model + tile baselines,
-# scores tiles, renders interactive Folium map with beat/community overlays.
+# Inference-only app — NO geopandas. Beat and community boundaries loaded as
+# plain JSON from Chicago SODA API, rendered directly via Folium GeoJson.
 #
-# Pre-requisites in deployment/ folder (committed to your GitHub repo):
+# Pre-requisites in deployment/ folder:
 #   - xgb_calibrated_pipeline.joblib
 #   - tile_baseline.csv
 #   - metadata.json
-#
-# Run locally:  streamlit run streamlit_app.py
-# Deploy:       push to GitHub → connect to Streamlit Cloud
 # =============================================================================
 
 import streamlit as st
@@ -21,12 +18,11 @@ import joblib
 import os
 import requests
 import h3
-import geopandas as gpd
 from datetime import date, datetime, timedelta
-from shapely.geometry import shape
 from streamlit_folium import st_folium
 import folium
 import folium.plugins as plugins
+from shapely.geometry import shape as shapely_shape, Point
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -38,16 +34,16 @@ st.set_page_config(
 
 DEPLOY_DIR = os.path.join(os.path.dirname(__file__), "..", "deployment")
 API_LIVE = "https://data.cityofchicago.org/resource/f6bk-yv3r.json"
+API_BEATS = "https://data.cityofchicago.org/resource/n9it-hstw.json?$limit=5000"
+API_COMMUNITY = "https://data.cityofchicago.org/resource/igwz-8jzy.json?$limit=100"
 H3_RES = 8
-VIOLENT_TYPES = ["BATTERY", "ASSAULT", "ROBBERY"]
 
 
 # =============================================================================
-# CACHED LOADERS — run once, persist across reruns
+# CACHED LOADERS
 # =============================================================================
 @st.cache_resource
 def load_model():
-    """Load calibrated XGBoost pipeline + metadata."""
     pipeline = joblib.load(os.path.join(DEPLOY_DIR, "xgb_calibrated_pipeline.joblib"))
     baselines = pd.read_csv(os.path.join(DEPLOY_DIR, "tile_baseline.csv"))
     with open(os.path.join(DEPLOY_DIR, "metadata.json")) as f:
@@ -56,81 +52,55 @@ def load_model():
 
 
 @st.cache_data(ttl=3600)
-def load_beats():
-    """Load Chicago police beat boundaries from SODA API."""
-    url = "https://data.cityofchicago.org/resource/n9it-hstw.json?$limit=5000"
-    raw = pd.read_json(url)
-    if "the_geom" in raw.columns:
-        gdf = gpd.GeoDataFrame(
-            raw.drop(columns=["the_geom"]).copy(),
-            geometry=raw["the_geom"].apply(
-                lambda g: shape(g) if isinstance(g, dict) else None
-            ),
-            crs="EPSG:4326",
-        )
-        gdf = gdf[gdf.geometry.notna()].copy()
-    else:
-        gdf = gpd.GeoDataFrame(raw.copy(), geometry=None, crs="EPSG:4326")
-    return gdf
+def load_beats_json():
+    """Load beat boundaries as raw JSON list (no geopandas)."""
+    resp = requests.get(API_BEATS, timeout=60)
+    resp.raise_for_status()
+    beats = resp.json()
+    return [b for b in beats if "the_geom" in b and isinstance(b["the_geom"], dict)]
 
 
 @st.cache_data(ttl=3600)
-def load_community_areas():
-    """Load Chicago community area boundaries from SODA GeoJSON."""
-    url = "https://data.cityofchicago.org/resource/igwz-8jzy.geojson"
-    try:
-        gdf = gpd.read_file(url)
-        gdf = gdf[gdf.geometry.notna()].copy()
-        # Normalise column names
-        renames = {}
-        for orig, target in [
-            ("COMMUNITY", "community"), ("name", "community"),
-            ("AREA_NUMBE", "area_numbe"), ("area_num_1", "area_numbe"),
-        ]:
-            if orig in gdf.columns and target not in gdf.columns:
-                renames[orig] = target
-        if renames:
-            gdf = gdf.rename(columns=renames)
-        return gdf
-    except Exception:
-        return None
+def load_community_json():
+    """Load community area boundaries as raw JSON list (no geopandas)."""
+    resp = requests.get(API_COMMUNITY, timeout=60)
+    resp.raise_for_status()
+    areas = resp.json()
+    return [a for a in areas if "the_geom" in a and isinstance(a["the_geom"], dict)]
 
 
 @st.cache_data(ttl=3600)
-def build_tile_beat_map(baselines, beats_gdf):
-    """Spatial join: map each H3 tile to a police beat/district."""
-    tile_h3 = baselines[["h3_address"]].drop_duplicates().copy()
-    tile_h3[["_lat", "_lon"]] = tile_h3["h3_address"].apply(
-        lambda x: pd.Series(h3.cell_to_latlng(x))
-    )
-    tile_pts = gpd.GeoDataFrame(
-        tile_h3,
-        geometry=gpd.points_from_xy(tile_h3["_lon"], tile_h3["_lat"]),
-        crs="EPSG:4326",
-    )
-
-    bcol = (
-        "beat_num"
-        if "beat_num" in beats_gdf.columns
-        else ("beat" if "beat" in beats_gdf.columns else None)
-    )
-    dcol = "district" if "district" in beats_gdf.columns else None
-    join_cols = ["geometry"] + ([bcol] if bcol else []) + ([dcol] if dcol else [])
-
-    joined = gpd.sjoin(tile_pts, beats_gdf[join_cols], how="left", predicate="within")
+def build_tile_beat_map(_baselines, _beats_json):
+    """Map each H3 tile centroid to a beat/district using point-in-polygon."""
+    beat_polys = []
+    for b in _beats_json:
+        try:
+            geom = shapely_shape(b["the_geom"])
+            beat_num = b.get("beat_num", b.get("beat", "Unknown"))
+            district = b.get("district", "")
+            beat_polys.append((geom, str(beat_num), str(district)))
+        except Exception:
+            continue
 
     tile_map = {}
-    for _, r in joined.iterrows():
-        b = str(r.get(bcol, "Unknown")) if bcol and pd.notna(r.get(bcol)) else "Unknown"
-        d = str(r.get(dcol, "")) if dcol and pd.notna(r.get(dcol)) else ""
-        tile_map[r["h3_address"]] = (b, d)
+    for h3_addr in _baselines["h3_address"].unique():
+        lat, lon = h3.cell_to_latlng(h3_addr)
+        pt = Point(lon, lat)
+        matched = False
+        for geom, beat_num, district in beat_polys:
+            if geom.contains(pt):
+                tile_map[h3_addr] = (beat_num, district)
+                matched = True
+                break
+        if not matched:
+            tile_map[h3_addr] = ("Unknown", "")
 
     return tile_map
 
 
 @st.cache_data(ttl=300)
 def fetch_live_lag(target_date):
-    """Fetch recent violent crimes to compute fresh lag_1d per tile."""
+    """Fetch recent violent crimes for fresh lag_1d."""
     yesterday = target_date - timedelta(days=1)
     start = target_date - timedelta(days=2)
     params = {
@@ -154,8 +124,7 @@ def fetch_live_lag(target_date):
         df["longitude"] = pd.to_numeric(df.get("longitude"), errors="coerce")
         df = df.dropna(subset=["Date", "latitude", "longitude"])
         df["h3_address"] = df.apply(
-            lambda r: h3.latlng_to_cell(r["latitude"], r["longitude"], H3_RES),
-            axis=1,
+            lambda r: h3.latlng_to_cell(r["latitude"], r["longitude"], H3_RES), axis=1
         )
         yest_df = df[df["Date"].dt.date == yesterday]
         lag_counts = yest_df.groupby("h3_address").size().reset_index(name="lag_1d")
@@ -165,38 +134,31 @@ def fetch_live_lag(target_date):
 
 
 # =============================================================================
-# PREDICTION ENGINE
+# PREDICTION
 # =============================================================================
 SHIFT_MAP = {
-    "morning_noon": {"is_afternoon_night": 0, "is_overnight": 0, "hour_start": 6},
-    "afternoon_night": {"is_afternoon_night": 1, "is_overnight": 0, "hour_start": 14},
-    "overnight": {"is_afternoon_night": 0, "is_overnight": 1, "hour_start": 22},
+    "morning_noon": {"is_afternoon_night": 0, "is_overnight": 0},
+    "afternoon_night": {"is_afternoon_night": 1, "is_overnight": 0},
+    "overnight": {"is_afternoon_night": 0, "is_overnight": 1},
 }
 
 
 def predict_tiles(pipeline, baselines, meta, query_date, shift, threshold, override_tiles=None):
-    """Score all tiles for a given date and shift."""
     tiles = baselines.copy()
     feature_cols = meta["feature_cols"]
 
-    # Apply live lag overrides
     if override_tiles is not None and len(override_tiles) > 0:
         tiles = tiles.merge(
-            override_tiles[["h3_address", "lag_1d"]].rename(
-                columns={"lag_1d": "lag_1d_fresh"}
-            ),
-            on="h3_address",
-            how="left",
+            override_tiles[["h3_address", "lag_1d"]].rename(columns={"lag_1d": "lag_1d_fresh"}),
+            on="h3_address", how="left",
         )
         tiles["lag_1d"] = tiles["lag_1d_fresh"].fillna(tiles["lag_1d"])
         tiles.drop(columns=["lag_1d_fresh"], inplace=True)
 
-    # Shift flags
     s = SHIFT_MAP[shift]
     tiles["is_afternoon_night"] = s["is_afternoon_night"]
     tiles["is_overnight"] = s["is_overnight"]
 
-    # Cyclical time features — (month-1)/12 matches training notebook
     dt = pd.Timestamp(query_date)
     dow, mon = dt.dayofweek, dt.month
     tiles["day_sin"] = np.sin(2 * np.pi * dow / 7)
@@ -204,7 +166,6 @@ def predict_tiles(pipeline, baselines, meta, query_date, shift, threshold, overr
     tiles["month_sin"] = np.sin(2 * np.pi * (mon - 1) / 12)
     tiles["month_cos"] = np.cos(2 * np.pi * (mon - 1) / 12)
 
-    # Score
     X = tiles[feature_cols]
     probs = pipeline.predict_proba(X)[:, 1]
 
@@ -212,8 +173,7 @@ def predict_tiles(pipeline, baselines, meta, query_date, shift, threshold, overr
     results["crime_probability"] = probs.round(4)
     results["flagged"] = (probs >= threshold).astype(int)
     results["risk_tier"] = pd.cut(
-        probs,
-        bins=[0, 0.10, 0.20, 0.35, 1.0],
+        probs, bins=[0, 0.10, 0.20, 0.35, 1.0],
         labels=["Low", "Moderate", "High", "Critical"],
     )
     results["shift"] = shift
@@ -222,7 +182,7 @@ def predict_tiles(pipeline, baselines, meta, query_date, shift, threshold, overr
 
 
 # =============================================================================
-# MAP BUILDER
+# MAP BUILDER (pure Folium + JSON, no geopandas)
 # =============================================================================
 def prob_to_hex(prob, threshold=0.15):
     if prob < threshold:
@@ -235,26 +195,21 @@ def prob_to_hex(prob, threshold=0.15):
 
 
 def build_map(
-    results, beats_gdf, community_gdf, tile_beat_map,
+    results, beats_json, community_json, tile_beat_map,
     threshold, show_monitor, district_filter, beat_filter, tier_filter,
 ):
-    m = folium.Map(
-        location=[41.8781, -87.6298],
-        zoom_start=11,
-        tiles="CartoDB positron",
-    )
+    m = folium.Map(location=[41.8781, -87.6298], zoom_start=11, tiles="CartoDB positron")
 
     # ── Beat boundaries ───────────────────────────────────────────────────
-    bcol = "beat_num" if "beat_num" in beats_gdf.columns else ("beat" if "beat" in beats_gdf.columns else None)
-    dcol = "district" if "district" in beats_gdf.columns else None
     beats_layer = folium.FeatureGroup(name="Police Beats", show=True)
-    beats_4326 = beats_gdf.to_crs("EPSG:4326")
+    for b in beats_json:
+        beat_num = str(b.get("beat_num", b.get("beat", "Unknown")))
+        district = str(b.get("district", ""))
+        geojson = b["the_geom"]
 
-    for _, row in beats_4326.iterrows():
-        bnum = row.get(bcol, "Unknown") if bcol else "Unknown"
-        dist = row.get(dcol, "") if dcol else ""
-        is_sel = (district_filter == "ALL" or str(dist) == district_filter) and (
-            beat_filter == "ALL" or str(bnum) == beat_filter
+        is_sel = (
+            (district_filter == "ALL" or district == district_filter)
+            and (beat_filter == "ALL" or beat_num == beat_filter)
         )
         style = {
             "fillColor": "#1A237E" if is_sel and district_filter != "ALL" else "transparent",
@@ -264,24 +219,22 @@ def build_map(
             "dashArray": "" if is_sel and district_filter != "ALL" else "4 4",
         }
         folium.GeoJson(
-            data=row.geometry.__geo_interface__,
+            data=geojson,
             style_function=lambda feat, s=style: s,
-            tooltip=folium.Tooltip(f"<b>Beat {bnum}</b><br>District {dist}"),
+            tooltip=folium.Tooltip(f"<b>Beat {beat_num}</b><br>District {district}"),
         ).add_to(beats_layer)
     beats_layer.add_to(m)
 
     # ── Community areas ───────────────────────────────────────────────────
-    if community_gdf is not None and len(community_gdf) > 0:
+    if community_json:
         comm_layer = folium.FeatureGroup(name="Community Areas", show=False)
-        comm_4326 = community_gdf.to_crs("EPSG:4326")
-        for _, crow in comm_4326.iterrows():
-            name = crow.get("community", "Unknown")
-            num = crow.get("area_numbe", "")
-            geom = crow.geometry
-            if geom is None:
-                continue
+        for a in community_json:
+            name = a.get("community", a.get("COMMUNITY", "Unknown"))
+            num = a.get("area_numbe", a.get("AREA_NUMBE", a.get("area_num_1", "")))
+            geojson = a["the_geom"]
+
             folium.GeoJson(
-                data=geom.__geo_interface__,
+                data=geojson,
                 style_function=lambda feat: {
                     "fillColor": "transparent",
                     "color": "#6A1B9A",
@@ -365,12 +318,16 @@ def build_map(
 # LOAD DATA
 # =============================================================================
 pipeline, baselines, meta = load_model()
-beats_gdf = load_beats()
-community_gdf = load_community_areas()
-tile_beat_map = build_tile_beat_map(baselines, beats_gdf)
+beats_json = load_beats_json()
+community_json = load_community_json()
+tile_beat_map = build_tile_beat_map(baselines, beats_json)
 
-all_districts = sorted({d for _, d in tile_beat_map.values() if d})
-all_beats = sorted({b for b, _ in tile_beat_map.values() if b != "Unknown"})
+all_districts = sorted({str(b.get("district", "")) for b in beats_json if b.get("district")})
+all_beats = sorted({
+    str(b.get("beat_num", b.get("beat", "")))
+    for b in beats_json
+    if b.get("beat_num") or b.get("beat")
+})
 
 
 # =============================================================================
@@ -380,18 +337,16 @@ with st.sidebar:
     st.markdown("## ⚙️ Controls")
 
     query_date = st.date_input("**Date**", value=date.today())
-
     shift = st.selectbox(
         "**Shift**",
         options=["morning_noon", "afternoon_night", "overnight"],
         format_func=lambda s: {
-            "morning_noon": "Morning / Noon (06:00–13:59)",
-            "afternoon_night": "Afternoon / Night (14:00–21:59)",
-            "overnight": "Overnight (22:00–05:59)",
+            "morning_noon": "Morning / Noon (06–13)",
+            "afternoon_night": "Afternoon / Night (14–21)",
+            "overnight": "Overnight (22–05)",
         }[s],
         index=1,
     )
-
     threshold = st.slider(
         "**Dispatch Threshold**",
         min_value=0.05, max_value=0.50,
@@ -401,20 +356,19 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### 📍 Area Filter")
-
     district_filter = st.selectbox(
         "District",
         options=["ALL"] + all_districts,
         format_func=lambda d: "All districts" if d == "ALL" else f"District {d}",
     )
-
     if district_filter == "ALL":
         beat_options = ["ALL"] + all_beats
     else:
-        beat_options = ["ALL"] + sorted(
-            {b for b, d in tile_beat_map.values() if d == district_filter and b != "Unknown"}
-        )
-
+        beat_options = ["ALL"] + sorted({
+            str(b.get("beat_num", b.get("beat", "")))
+            for b in beats_json
+            if str(b.get("district", "")) == district_filter
+        })
     beat_filter = st.selectbox(
         "Beat",
         options=beat_options,
@@ -428,7 +382,6 @@ with st.sidebar:
         options=["Critical", "High", "Moderate", "Low"],
         default=["Critical", "High", "Moderate", "Low"],
     )
-
     show_monitor = st.checkbox("Show monitor layer", value=False)
 
     st.markdown("---")
@@ -444,72 +397,60 @@ with st.sidebar:
 
 
 # =============================================================================
-# MAIN AREA
+# MAIN
 # =============================================================================
 st.markdown(
-    """
-    <h1 style="margin-bottom:0;">🚨 Chicago Violent Crime Prediction</h1>
-    <p style="color:#666; font-size:1.1rem; margin-top:0;">
-        XGBoost patrol dispatch dashboard — score H3 tiles, flag high-risk areas, generate patrol maps
-    </p>
-    """,
+    "<h1 style='margin-bottom:0;'>🚨 Chicago Violent Crime Prediction</h1>"
+    "<p style='color:#666;font-size:1.1rem;margin-top:0;'>"
+    "XGBoost patrol dispatch dashboard — score H3 tiles, flag high-risk areas</p>",
     unsafe_allow_html=True,
 )
 
-# ── Run prediction ────────────────────────────────────────────────────────
+# ── Prediction ────────────────────────────────────────────────────────────
 override = None
 if use_live:
     with st.spinner("Fetching live crime data …"):
         override = fetch_live_lag(query_date)
     if override is not None:
-        st.info(f"🔄 Live lag loaded: {len(override)} tiles with fresh data from {query_date - timedelta(days=1)}")
+        st.info(f"🔄 Live lag: {len(override)} tiles with fresh data from {query_date - timedelta(days=1)}")
     else:
-        st.warning("No recent violent crimes found in API — using baseline lag values.")
+        st.warning("No recent violent crimes in API — using baseline lag values.")
 
 results = predict_tiles(pipeline, baselines, meta, query_date, shift, threshold, override)
 
-# ── Summary metrics ───────────────────────────────────────────────────────
+# ── Metrics ───────────────────────────────────────────────────────────────
 n_total = len(results)
 n_flagged = int(results["flagged"].sum())
 n_critical = int((results["risk_tier"] == "Critical").sum())
 n_high = int((results["risk_tier"] == "High").sum())
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Total Tiles", f"{n_total:,}")
-col2.metric("Flagged for Dispatch", f"{n_flagged:,}", delta=f"{n_flagged/n_total:.1%}")
-col3.metric("Critical Risk", f"{n_critical:,}")
-col4.metric("High Risk", f"{n_high:,}")
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Total Tiles", f"{n_total:,}")
+c2.metric("Flagged", f"{n_flagged:,}", delta=f"{n_flagged/max(n_total,1):.1%}")
+c3.metric("Critical", f"{n_critical:,}")
+c4.metric("High", f"{n_high:,}")
 
-# ── Tabs: Map / Table / Charts ────────────────────────────────────────────
+# ── Tabs ──────────────────────────────────────────────────────────────────
 tab_map, tab_table, tab_charts = st.tabs(["🗺️ Patrol Map", "📋 Dispatch Table", "📊 Analytics"])
 
 with tab_map:
     with st.spinner("Building map …"):
         patrol_map, filtered_df = build_map(
-            results, beats_gdf, community_gdf, tile_beat_map,
+            results, beats_json, community_json, tile_beat_map,
             threshold, show_monitor, district_filter, beat_filter, tier_filter,
         )
     st_folium(patrol_map, width=None, height=650, returned_objects=[])
 
-    # Download map as HTML
-    from io import BytesIO
     map_html = patrol_map._repr_html_()
     st.download_button(
-        "📥 Download Map (HTML)",
-        data=map_html,
-        file_name=f"patrol_map_{query_date}_{shift}.html",
-        mime="text/html",
+        "📥 Download Map (HTML)", data=map_html,
+        file_name=f"patrol_map_{query_date}_{shift}.html", mime="text/html",
     )
 
 with tab_table:
-    # Apply same filters
     display_df = results.copy()
-    display_df["beat"] = display_df["h3_address"].map(
-        lambda h: tile_beat_map.get(h, ("?", ""))[0]
-    )
-    display_df["district"] = display_df["h3_address"].map(
-        lambda h: tile_beat_map.get(h, ("?", ""))[1]
-    )
+    display_df["beat"] = display_df["h3_address"].map(lambda h: tile_beat_map.get(h, ("?", ""))[0])
+    display_df["district"] = display_df["h3_address"].map(lambda h: tile_beat_map.get(h, ("?", ""))[1])
     if district_filter != "ALL":
         display_df = display_df[display_df["district"] == district_filter]
     if beat_filter != "ALL":
@@ -518,7 +459,6 @@ with tab_table:
         display_df = display_df[display_df["risk_tier"].isin(tier_filter)]
 
     top_n = st.slider("Top N tiles", min_value=5, max_value=50, value=20, step=5)
-
     show_df = display_df.head(top_n)[
         ["h3_address", "beat", "district", "crime_probability", "risk_tier", "flagged"]
     ].copy()
@@ -527,36 +467,23 @@ with tab_table:
     show_df.index.name = "Rank"
 
     st.dataframe(
-        show_df.style.background_gradient(
-            subset=["crime_probability"], cmap="YlOrRd"
-        ),
+        show_df.style.background_gradient(subset=["crime_probability"], cmap="YlOrRd"),
         use_container_width=True,
     )
-
-    # CSV download
     csv = display_df[display_df["flagged"] == 1].to_csv(index=False)
     st.download_button(
-        "📥 Download Flagged Tiles (CSV)",
-        data=csv,
-        file_name=f"patrol_briefing_{query_date}_{shift}.csv",
-        mime="text/csv",
+        "📥 Download Flagged Tiles (CSV)", data=csv,
+        file_name=f"patrol_briefing_{query_date}_{shift}.csv", mime="text/csv",
     )
 
 with tab_charts:
     import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
 
-    tier_palette = {
-        "Critical": "#C0392B",
-        "High": "#E67E22",
-        "Moderate": "#2980B9",
-        "Low": "#27AE60",
-    }
+    tier_palette = {"Critical": "#C0392B", "High": "#E67E22", "Moderate": "#2980B9", "Low": "#27AE60"}
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     fig.subplots_adjust(wspace=0.4)
 
-    # Panel 1: Risk tier distribution
     tier_counts = results["risk_tier"].value_counts().reindex(
         ["Critical", "High", "Moderate", "Low"], fill_value=0
     )
@@ -566,29 +493,19 @@ with tab_charts:
         alpha=0.85, edgecolor="white", width=0.6,
     )
     for bar, val in zip(bars, tier_counts.values):
-        pct = val / n_total * 100
+        pct = val / max(n_total, 1) * 100
         axes[0].text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + n_total * 0.005,
-            f"{val:,}\n({pct:.1f}%)",
-            ha="center", fontsize=9, fontweight="bold",
+            bar.get_x() + bar.get_width() / 2, bar.get_height() + n_total * 0.005,
+            f"{val:,}\n({pct:.1f}%)", ha="center", fontsize=9, fontweight="bold",
         )
-    axes[0].set_ylim(0, tier_counts.max() * 1.25)
+    axes[0].set_ylim(0, max(tier_counts.max() * 1.25, 1))
     axes[0].set_ylabel("Number of Tiles")
-    axes[0].set_title(
-        f"Risk Tier Distribution — {n_total:,} Tiles\n"
-        f"{query_date} | {shift.replace('_', ' ').title()}",
-        fontweight="bold",
-    )
+    axes[0].set_title(f"Risk Tier Distribution — {n_total:,} Tiles\n"
+                      f"{query_date} | {shift.replace('_',' ').title()}", fontweight="bold")
     axes[0].grid(axis="y", alpha=0.3)
 
-    # Panel 2: Probability histogram
-    axes[1].hist(
-        results["crime_probability"], bins=40,
-        color="#2980B9", alpha=0.8, edgecolor="white",
-    )
-    axes[1].axvline(threshold, color="red", linestyle="--", linewidth=2,
-                    label=f"Threshold ({threshold:.2f})")
+    axes[1].hist(results["crime_probability"], bins=40, color="#2980B9", alpha=0.8, edgecolor="white")
+    axes[1].axvline(threshold, color="red", linestyle="--", linewidth=2, label=f"Threshold ({threshold:.2f})")
     axes[1].set_xlabel("Crime Probability")
     axes[1].set_ylabel("Number of Tiles")
     axes[1].set_title("Probability Distribution", fontweight="bold")

@@ -6,7 +6,6 @@ xgboost
 joblib
 requests
 h3
-geopandas
 shapely
 folium
 streamlit-folium
