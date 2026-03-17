@@ -13,7 +13,7 @@ Streamlit web app for real-time crime prediction and patrol dispatch planning in
 
 ### 1. Train the model (locally, in Jupyter)
 
-Run `Inference_Engine_UI_v2.ipynb` STEP 0 to fetch data and train. This creates:
+Run `Retrain_Inference_Engine_UI.ipynb` STEP 0 to fetch data and train. This creates:
 
 ```
 deployment/
