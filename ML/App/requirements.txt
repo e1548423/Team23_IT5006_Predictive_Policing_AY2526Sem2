@@ -1,0 +1,13 @@
+streamlit>=1.30
+pandas>=2.0
+numpy>=1.24
+scikit-learn>=1.3
+xgboost>=2.0
+joblib
+requests
+h3>=4.0
+geopandas>=0.14
+shapely>=2.0
+folium>=0.15
+streamlit-folium>=0.18
+matplotlib>=3.7
