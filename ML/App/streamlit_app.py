@@ -1,20 +1,18 @@
 # =============================================================================
 # CHICAGO VIOLENT CRIME PREDICTION — STREAMLIT PATROL DISPATCH DASHBOARD
 #
-# Inference-only app — NO geopandas. Beat and community boundaries loaded as
-# plain JSON from Chicago SODA API, rendered directly via Folium GeoJson.
+# API-backed version: calls FastAPI on Render for predictions.
+# Model is NOT loaded locally — only map/UI logic runs in Streamlit.
 #
-# Pre-requisites in deployment/ folder:
-#   - xgb_calibrated_pipeline.joblib
-#   - tile_baseline.csv
-#   - metadata.json
+# Pre-requisites:
+#   - Set CRIME_API_URL in Streamlit Cloud secrets or env var
+#     e.g. https://chicago-crime-api.onrender.com
 # =============================================================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import json
-import joblib
 import os
 import requests
 import h3
@@ -32,7 +30,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-DEPLOY_DIR = os.path.join(os.path.dirname(__file__), "..", "deployment")
+# ── API config ───────────────────────────────────────────────────────────────
+# Priority: Streamlit secrets > env var > default
+API_BASE = (
+    st.secrets.get("CRIME_API_URL", None)
+    or os.environ.get("CRIME_API_URL", "https://chicago-crime-api.onrender.com")
+)
+
 API_LIVE = "https://data.cityofchicago.org/resource/f6bk-yv3r.json"
 API_BEATS = "https://data.cityofchicago.org/resource/n9it-hstw.json?$limit=5000"
 API_COMMUNITY = "https://data.cityofchicago.org/resource/igwz-8jzy.json?$limit=100"
@@ -42,13 +46,20 @@ H3_RES = 8
 # =============================================================================
 # CACHED LOADERS
 # =============================================================================
-@st.cache_resource
-def load_model():
-    pipeline = joblib.load(os.path.join(DEPLOY_DIR, "xgb_calibrated_pipeline.joblib"))
-    baselines = pd.read_csv(os.path.join(DEPLOY_DIR, "tile_baseline.csv"))
-    with open(os.path.join(DEPLOY_DIR, "metadata.json")) as f:
-        meta = json.load(f)
-    return pipeline, baselines, meta
+@st.cache_data(ttl=3600)
+def load_metadata():
+    """Fetch model metadata from the API."""
+    resp = requests.get(f"{API_BASE}/metadata", timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+@st.cache_data(ttl=3600)
+def load_baselines():
+    """Fetch tile H3 addresses from the API."""
+    resp = requests.get(f"{API_BASE}/baselines", timeout=30)
+    resp.raise_for_status()
+    return resp.json()["h3_addresses"]
 
 
 @st.cache_data(ttl=3600)
@@ -70,7 +81,7 @@ def load_community_json():
 
 
 @st.cache_data(ttl=3600)
-def build_tile_beat_map(_baselines, _beats_json):
+def build_tile_beat_map(_h3_addresses, _beats_json):
     """Map each H3 tile centroid to a beat/district using point-in-polygon."""
     beat_polys = []
     for b in _beats_json:
@@ -83,7 +94,7 @@ def build_tile_beat_map(_baselines, _beats_json):
             continue
 
     tile_map = {}
-    for h3_addr in _baselines["h3_address"].unique():
+    for h3_addr in _h3_addresses:
         lat, lon = h3.cell_to_latlng(h3_addr)
         pt = Point(lon, lat)
         matched = False
@@ -134,50 +145,27 @@ def fetch_live_lag(target_date):
 
 
 # =============================================================================
-# PREDICTION
+# PREDICTION (via API)
 # =============================================================================
-SHIFT_MAP = {
-    "morning_noon": {"is_afternoon_night": 0, "is_overnight": 0},
-    "afternoon_night": {"is_afternoon_night": 1, "is_overnight": 0},
-    "overnight": {"is_afternoon_night": 0, "is_overnight": 1},
-}
+def predict_tiles(meta, query_date, shift, threshold, override_tiles=None):
+    """Call the FastAPI backend for predictions."""
+    payload = {
+        "query_date": str(query_date),
+        "shift": shift,
+        "threshold": threshold,
+    }
 
-
-def predict_tiles(pipeline, baselines, meta, query_date, shift, threshold, override_tiles=None):
-    tiles = baselines.copy()
-    feature_cols = meta["feature_cols"]
-
+    # Convert live lag DataFrame to dict for the API
     if override_tiles is not None and len(override_tiles) > 0:
-        tiles = tiles.merge(
-            override_tiles[["h3_address", "lag_1d"]].rename(columns={"lag_1d": "lag_1d_fresh"}),
-            on="h3_address", how="left",
+        payload["live_lag"] = dict(
+            zip(override_tiles["h3_address"], override_tiles["lag_1d"].astype(float))
         )
-        tiles["lag_1d"] = tiles["lag_1d_fresh"].fillna(tiles["lag_1d"])
-        tiles.drop(columns=["lag_1d_fresh"], inplace=True)
 
-    s = SHIFT_MAP[shift]
-    tiles["is_afternoon_night"] = s["is_afternoon_night"]
-    tiles["is_overnight"] = s["is_overnight"]
+    resp = requests.post(f"{API_BASE}/predict", json=payload, timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
 
-    dt = pd.Timestamp(query_date)
-    dow, mon = dt.dayofweek, dt.month
-    tiles["day_sin"] = np.sin(2 * np.pi * dow / 7)
-    tiles["day_cos"] = np.cos(2 * np.pi * dow / 7)
-    tiles["month_sin"] = np.sin(2 * np.pi * (mon - 1) / 12)
-    tiles["month_cos"] = np.cos(2 * np.pi * (mon - 1) / 12)
-
-    X = tiles[feature_cols]
-    probs = pipeline.predict_proba(X)[:, 1]
-
-    results = tiles[["h3_address"]].copy()
-    results["crime_probability"] = probs.round(4)
-    results["flagged"] = (probs >= threshold).astype(int)
-    results["risk_tier"] = pd.cut(
-        probs, bins=[0, 0.10, 0.20, 0.35, 1.0],
-        labels=["Low", "Moderate", "High", "Critical"],
-    )
-    results["shift"] = shift
-    results["query_date"] = str(query_date)
+    results = pd.DataFrame(data["results"])
     return results.sort_values("crime_probability", ascending=False).reset_index(drop=True)
 
 
@@ -317,10 +305,20 @@ def build_map(
 # =============================================================================
 # LOAD DATA
 # =============================================================================
-pipeline, baselines, meta = load_model()
+try:
+    meta = load_metadata()
+    h3_addresses = load_baselines()
+except Exception as e:
+    st.error(
+        f"**Cannot reach the prediction API** at `{API_BASE}`.\n\n"
+        f"The Render backend may be cold-starting (takes ~30s on free tier). "
+        f"Refresh the page in a moment.\n\n`{e}`"
+    )
+    st.stop()
+
 beats_json = load_beats_json()
 community_json = load_community_json()
-tile_beat_map = build_tile_beat_map(baselines, beats_json)
+tile_beat_map = build_tile_beat_map(tuple(h3_addresses), beats_json)
 
 all_districts = sorted({str(b.get("district", "")) for b in beats_json if b.get("district")})
 all_beats = sorted({
@@ -391,8 +389,9 @@ with st.sidebar:
     st.caption(
         f"**Model:** ROC-AUC {meta['roc_auc']}  \n"
         f"**Threshold:** {meta['threshold']}  \n"
-        f"**Tiles:** {len(baselines):,}  \n"
-        f"**Trained:** {meta.get('trained_at', 'N/A')[:10]}"
+        f"**Tiles:** {meta['tile_count']:,}  \n"
+        f"**Trained:** {meta.get('trained_at', 'N/A')[:10]}  \n"
+        f"**API:** `{API_BASE}`"
     )
 
 
@@ -416,7 +415,8 @@ if use_live:
     else:
         st.warning("No recent violent crimes in API — using baseline lag values.")
 
-results = predict_tiles(pipeline, baselines, meta, query_date, shift, threshold, override)
+with st.spinner("Running prediction …"):
+    results = predict_tiles(meta, query_date, shift, threshold, override)
 
 # ── Metrics ───────────────────────────────────────────────────────────────
 n_total = len(results)

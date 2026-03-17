@@ -1,9 +1,6 @@
 streamlit
 pandas
 numpy
-scikit-learn>=1.6,<1.7
-xgboost
-joblib
 requests
 h3
 shapely
