@@ -137,6 +137,20 @@ def build_tile_community_map(_h3_addresses, _community_json):
     return tile_map
 
 
+def get_pr_at_threshold(threshold):
+    """Fetch interpolated precision/recall for a given threshold from the API."""
+    try:
+        resp = requests.get(
+            f"{API_BASE}/pr_at_threshold",
+            params={"threshold": threshold},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=300)
 def fetch_live_lag(target_date):
     """Fetch recent violent crimes for fresh lag_1d."""
@@ -422,10 +436,19 @@ with st.sidebar:
     use_live = st.checkbox("🔄 Use live lag data", value=False)
 
     st.markdown("---")
+    # Dynamic precision/recall based on current threshold
+    pr_data = get_pr_at_threshold(threshold)
+    if pr_data:
+        dyn_prec = f"{pr_data['precision']:.4f}"
+        dyn_rec = f"{pr_data['recall']:.4f}"
+    else:
+        dyn_prec = meta.get('precision', 'N/A')
+        dyn_rec = meta.get('recall', 'N/A')
+
     st.caption(
         f"**Model:** ROC-AUC {meta['roc_auc']}  \n"
-        f"**Precision:** {meta.get('precision', 'N/A')}  \n"
-        f"**Recall:** {meta.get('recall', 'N/A')}  \n"
+        f"**Precision @ {threshold:.2f}:** {dyn_prec}  \n"
+        f"**Recall @ {threshold:.2f}:** {dyn_rec}  \n"
         f"**Threshold:** {meta['threshold']}  \n"
         f"**Tiles:** {meta['tile_count']:,}  \n"
         f"**Trained:** {meta.get('trained_at', 'N/A')[:10]}  \n"

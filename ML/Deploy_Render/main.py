@@ -94,6 +94,37 @@ def get_metadata():
     )
 
 
+class PRAtThresholdResponse(BaseModel):
+    threshold: float
+    precision: float
+    recall: float
+
+
+@app.get("/pr_at_threshold", response_model=PRAtThresholdResponse)
+def pr_at_threshold(threshold: float):
+    """Interpolate precision/recall from the saved PR curve for any threshold."""
+    pr_curve = meta.get("pr_curve")
+    if not pr_curve:
+        raise HTTPException(404, "PR curve not saved in metadata. Retrain the model.")
+
+    thresholds = np.array(pr_curve["thresholds"])
+    precisions = np.array(pr_curve["precision"])
+    recalls = np.array(pr_curve["recall"])
+
+    # Clamp to curve range
+    t = np.clip(threshold, thresholds.min(), thresholds.max())
+
+    # Interpolate (thresholds are ascending from precision_recall_curve)
+    prec = float(np.interp(t, thresholds, precisions))
+    rec = float(np.interp(t, thresholds, recalls))
+
+    return PRAtThresholdResponse(
+        threshold=round(threshold, 4),
+        precision=round(prec, 4),
+        recall=round(rec, 4),
+    )
+
+
 @app.get("/baselines")
 def get_baselines():
     """Return tile_baseline data so Streamlit can build the beat map without the model."""
