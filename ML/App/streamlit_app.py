@@ -388,6 +388,8 @@ with st.sidebar:
     st.markdown("---")
     st.caption(
         f"**Model:** ROC-AUC {meta['roc_auc']}  \n"
+        f"**Precision:** {meta.get('precision', 'N/A')}  \n"
+        f"**Recall:** {meta.get('recall', 'N/A')}  \n"
         f"**Threshold:** {meta['threshold']}  \n"
         f"**Tiles:** {meta['tile_count']:,}  \n"
         f"**Trained:** {meta.get('trained_at', 'N/A')[:10]}  \n"
