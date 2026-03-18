@@ -109,6 +109,34 @@ def build_tile_beat_map(_h3_addresses, _beats_json):
     return tile_map
 
 
+@st.cache_data(ttl=3600)
+def build_tile_community_map(_h3_addresses, _community_json):
+    """Map each H3 tile centroid to a community area name using point-in-polygon."""
+    comm_polys = []
+    for a in _community_json:
+        try:
+            geom = shapely_shape(a["the_geom"])
+            name = str(a.get("community", a.get("COMMUNITY", "Unknown"))).title()
+            comm_polys.append((geom, name))
+        except Exception:
+            continue
+
+    tile_map = {}
+    for h3_addr in _h3_addresses:
+        lat, lon = h3.cell_to_latlng(h3_addr)
+        pt = Point(lon, lat)
+        matched = False
+        for geom, name in comm_polys:
+            if geom.contains(pt):
+                tile_map[h3_addr] = name
+                matched = True
+                break
+        if not matched:
+            tile_map[h3_addr] = "Unknown"
+
+    return tile_map
+
+
 @st.cache_data(ttl=300)
 def fetch_live_lag(target_date):
     """Fetch recent violent crimes for fresh lag_1d."""
@@ -183,7 +211,7 @@ def prob_to_hex(prob, threshold=0.15):
 
 
 def build_map(
-    results, beats_json, community_json, tile_beat_map,
+    results, beats_json, community_json, tile_beat_map, tile_community_map,
     threshold, show_monitor, district_filter, beat_filter, tier_filter,
 ):
     m = folium.Map(location=[41.8781, -87.6298], zoom_start=11, tiles="CartoDB positron")
@@ -257,12 +285,14 @@ def build_map(
         colour = prob_to_hex(prob, threshold)
         boundary = h3.cell_to_boundary(h3_addr)
         b, d = tile_beat_map.get(h3_addr, ("?", ""))
+        community = tile_community_map.get(h3_addr, "Unknown")
 
         tooltip = (
             f"<div style='font-family:Arial;font-size:13px;'>"
             f"<b>🚨 DISPATCH</b><br>"
             f"<b>Tile:</b> {h3_addr}<br>"
             f"<b>Beat:</b> {b}" + (f" (Dist {d})" if d else "") + "<br>"
+            f"<b>Community:</b> {community}<br>"
             f"<b>Risk:</b> {tier}<br>"
             f"<b>Prob:</b> {prob:.1%}"
             f"</div>"
@@ -319,6 +349,7 @@ except Exception as e:
 beats_json = load_beats_json()
 community_json = load_community_json()
 tile_beat_map = build_tile_beat_map(tuple(h3_addresses), beats_json)
+tile_community_map = build_tile_community_map(tuple(h3_addresses), community_json)
 
 all_districts = sorted({str(b.get("district", "")) for b in beats_json if b.get("district")})
 all_beats = sorted({
@@ -350,6 +381,11 @@ with st.sidebar:
         min_value=0.05, max_value=0.50,
         value=float(meta["threshold"]),
         step=0.01, format="%.2f",
+        help=(
+            "Minimum predicted probability for a tile to be flagged for dispatch. "
+            "Raise it to focus on fewer, higher-confidence tiles. "
+            "Lower it to cast a wider net — but expect more false positives."
+        ),
     )
 
     st.markdown("---")
@@ -438,7 +474,7 @@ tab_map, tab_table, tab_charts = st.tabs(["🗺️ Patrol Map", "📋 Dispatch T
 with tab_map:
     with st.spinner("Building map …"):
         patrol_map, filtered_df = build_map(
-            results, beats_json, community_json, tile_beat_map,
+            results, beats_json, community_json, tile_beat_map, tile_community_map,
             threshold, show_monitor, district_filter, beat_filter, tier_filter,
         )
     st_folium(patrol_map, width=None, height=650, returned_objects=[])
@@ -453,6 +489,7 @@ with tab_table:
     display_df = results.copy()
     display_df["beat"] = display_df["h3_address"].map(lambda h: tile_beat_map.get(h, ("?", ""))[0])
     display_df["district"] = display_df["h3_address"].map(lambda h: tile_beat_map.get(h, ("?", ""))[1])
+    display_df["community"] = display_df["h3_address"].map(lambda h: tile_community_map.get(h, "Unknown"))
     if district_filter != "ALL":
         display_df = display_df[display_df["district"] == district_filter]
     if beat_filter != "ALL":
@@ -462,7 +499,7 @@ with tab_table:
 
     top_n = st.slider("Top N tiles", min_value=5, max_value=50, value=20, step=5)
     show_df = display_df.head(top_n)[
-        ["h3_address", "beat", "district", "crime_probability", "risk_tier", "flagged"]
+        ["h3_address", "beat", "district", "community", "crime_probability", "risk_tier", "flagged"]
     ].copy()
     show_df["flagged"] = show_df["flagged"].map({1: "🚨 DISPATCH", 0: "monitor"})
     show_df.index = range(1, len(show_df) + 1)
