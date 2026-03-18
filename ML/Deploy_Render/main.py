@@ -60,6 +60,8 @@ class PredictResponse(BaseModel):
 class MetadataResponse(BaseModel):
     roc_auc: float
     threshold: float
+    precision: float | None = None
+    recall: float | None = None
     tile_count: int
     trained_at: str
     feature_cols: list[str]
@@ -84,6 +86,8 @@ def get_metadata():
     return MetadataResponse(
         roc_auc=meta["roc_auc"],
         threshold=meta["threshold"],
+        precision=meta.get("precision"),
+        recall=meta.get("recall"),
         tile_count=len(baselines),
         trained_at=meta.get("trained_at", "N/A"),
         feature_cols=meta["feature_cols"],
