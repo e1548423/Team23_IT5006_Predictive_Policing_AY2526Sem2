@@ -402,6 +402,17 @@ with st.sidebar:
         ),
     )
 
+    # Dynamic precision/recall for the current threshold
+    pr_data = get_pr_at_threshold(threshold)
+    if pr_data:
+        st.markdown(
+            f"&nbsp;&nbsp; **Precision:** {pr_data['precision']:.4f} &nbsp;|&nbsp; "
+            f"**Recall:** {pr_data['recall']:.4f}",
+            help="Precision and recall at the selected threshold, interpolated from the test-set PR curve.",
+        )
+    else:
+        st.markdown("&nbsp;&nbsp; *Precision / Recall: retrain model to enable*")
+
     st.markdown("---")
     st.markdown("### 📍 Area Filter")
     district_filter = st.selectbox(
@@ -436,20 +447,16 @@ with st.sidebar:
     use_live = st.checkbox("🔄 Use live lag data", value=False)
 
     st.markdown("---")
-    # Dynamic precision/recall based on current threshold
-    pr_data = get_pr_at_threshold(threshold)
-    if pr_data:
-        dyn_prec = f"{pr_data['precision']:.4f}"
-        dyn_rec = f"{pr_data['recall']:.4f}"
-    else:
-        dyn_prec = meta.get('precision', 'N/A')
-        dyn_rec = meta.get('recall', 'N/A')
+    # Optimal threshold precision/recall (static, from training)
+    opt_prec = meta.get('precision', 'N/A')
+    opt_rec = meta.get('recall', 'N/A')
+    opt_thresh = meta['threshold']
 
     st.caption(
         f"**Model:** ROC-AUC {meta['roc_auc']}  \n"
-        f"**Precision @ {threshold:.2f}:** {dyn_prec}  \n"
-        f"**Recall @ {threshold:.2f}:** {dyn_rec}  \n"
-        f"**Threshold:** {meta['threshold']}  \n"
+        f"**Optimal threshold:** {opt_thresh}  \n"
+        f"**Precision @ optimal:** {opt_prec}  \n"
+        f"**Recall @ optimal:** {opt_rec}  \n"
         f"**Tiles:** {meta['tile_count']:,}  \n"
         f"**Trained:** {meta.get('trained_at', 'N/A')[:10]}  \n"
         f"**API:** `{API_BASE}`"
