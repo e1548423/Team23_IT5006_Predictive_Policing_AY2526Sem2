@@ -227,6 +227,7 @@ def prob_to_hex(prob, threshold=0.15):
 def build_map(
     results, beats_json, community_json, tile_beat_map, tile_community_map,
     threshold, show_monitor, district_filter, beat_filter, community_filter, tier_filter,
+    flagged_opacity=0.72, monitor_opacity=0.30,
 ):
     m = folium.Map(location=[41.8781, -87.6298], zoom_start=11, tiles="CartoDB positron")
 
@@ -300,7 +301,7 @@ def build_map(
             folium.Polygon(
                 locations=[(lat, lon) for lat, lon in boundary],
                 color="#F39C12", weight=1.0, fill=True,
-                fill_color="#F39C12", fill_opacity=0.30,
+                fill_color="#F39C12", fill_opacity=monitor_opacity,
                 tooltip=folium.Tooltip(f"Monitor: {float(row['crime_probability']):.1%}"),
             ).add_to(monitor_layer)
         monitor_layer.add_to(m)
@@ -331,7 +332,7 @@ def build_map(
         folium.Polygon(
             locations=[(lat, lon) for lat, lon in boundary],
             color=colour, weight=1.5, fill=True,
-            fill_color=colour, fill_opacity=0.72,
+            fill_color=colour, fill_opacity=flagged_opacity,
             tooltip=folium.Tooltip(tooltip, sticky=True),
             popup=folium.Popup(tooltip, max_width=280),
         ).add_to(flagged_layer)
@@ -481,6 +482,19 @@ with st.sidebar:
     )
 
     st.markdown("---")
+    st.markdown("### 🎨 Tile Opacity")
+    flagged_opacity = st.slider(
+        "Flagged tiles",
+        min_value=0.10, max_value=1.00, value=0.72, step=0.05, format="%.2f",
+        help="Lower opacity to see roads and streets beneath flagged tiles.",
+    )
+    monitor_opacity = st.slider(
+        "Monitor tiles",
+        min_value=0.10, max_value=1.00, value=0.30, step=0.05, format="%.2f",
+        help="Lower opacity to see roads and streets beneath monitor tiles.",
+    )
+
+    st.markdown("---")
     use_live = st.checkbox("🔄 Use live lag data", value=False)
 
     st.markdown("---")
@@ -543,6 +557,7 @@ with tab_map:
         patrol_map, filtered_df = build_map(
             results, beats_json, community_json, tile_beat_map, tile_community_map,
             threshold, show_monitor, district_filter, beat_filter, community_filter, tier_filter,
+            flagged_opacity=flagged_opacity, monitor_opacity=monitor_opacity,
         )
     st_folium(patrol_map, width=None, height=650, returned_objects=[])
 
