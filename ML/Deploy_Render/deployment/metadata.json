@@ -1,8 +1,10 @@
 {
   "model": "XGBoost",
-  "roc_auc": 0.778,
-  "threshold": 0.0542,
-  "base_rate": 0.07202,
+  "roc_auc": 0.7782,
+  "precision": 0.12,
+  "recall": 0.8209,
+  "threshold": 0.055,
+  "base_rate": 0.07211,
   "feature_cols": [
     "is_afternoon_night",
     "is_overnight",
@@ -33,11 +35,11 @@
     "month_cos",
     "neighbor_lag_1d_norm"
   ],
-  "total_tiles": 849,
-  "n_train_rows": 2215890,
-  "n_test_rows": 552699,
-  "trained_on": "2023-03-17 to 2026-03-17",
-  "trained_at": "2026-03-17 15:09:37.495560",
+  "total_tiles": 848,
+  "n_train_rows": 2210736,
+  "n_test_rows": 552048,
+  "trained_on": "2023-03-18 to 2026-03-18",
+  "trained_at": "2026-03-18 15:18:42.388061",
   "data_source": "https://data.cityofchicago.org/resource/ijzp-q8t2.json",
   "shift_hours": {
     "morning_noon": "06:00-13:59",
