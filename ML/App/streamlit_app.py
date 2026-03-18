@@ -408,10 +408,24 @@ with st.sidebar:
     # Dynamic precision/recall for the current threshold
     pr_data = get_pr_at_threshold(threshold)
     if pr_data:
+        prec = pr_data["precision"]
+        rec = pr_data["recall"]
+        prec_pct = f"{prec:.0%}"
+        rec_pct = f"{rec:.0%}"
+        false_alarm_pct = f"{1 - prec:.0%}"
+        missed_pct = f"{1 - rec:.0%}"
         st.markdown(
-            f"&nbsp;&nbsp; **Precision:** {pr_data['precision']:.4f} &nbsp;|&nbsp; "
-            f"**Recall:** {pr_data['recall']:.4f}",
-            help="Precision and recall at the selected threshold, interpolated from the test-set PR curve.",
+            f"&nbsp;&nbsp; **Precision:** {prec:.4f} &nbsp;|&nbsp; "
+            f"**Recall:** {rec:.4f}",
+            help=(
+                f"**Precision ({prec_pct})** — of all tiles the model flags for dispatch, "
+                f"about {prec_pct} actually had a violent crime during that shift. "
+                f"The other {false_alarm_pct} were false alarms — patrols sent to tiles where nothing happened.\n\n"
+                f"**Recall ({rec_pct})** — of all tiles where a violent crime actually occurred, "
+                f"the model successfully flagged {rec_pct} of them. "
+                f"It missed about {missed_pct}.\n\n"
+                f"*Interpolated from the test-set PR curve at threshold {threshold:.2f}.*"
+            ),
         )
     else:
         st.markdown("&nbsp;&nbsp; *Precision / Recall: retrain model to enable*")
