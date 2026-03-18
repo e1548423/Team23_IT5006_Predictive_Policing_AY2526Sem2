@@ -291,7 +291,21 @@ def build_map(
     if tier_filter:
         df = df[df["risk_tier"].isin(tier_filter)]
 
-    # ── Flagged tiles ─────────────────────────────────────────────────────
+    # ── Monitor tiles (added before flagged so flagged stays topmost) ────
+    if show_monitor:
+        monitor_layer = folium.FeatureGroup(name="⚠️ Monitor", show=True)
+        monitor_df = df[(df["flagged"] == 0) & (df["crime_probability"] >= threshold * 0.65)]
+        for _, row in monitor_df.iterrows():
+            boundary = h3.cell_to_boundary(row["h3_address"])
+            folium.Polygon(
+                locations=[(lat, lon) for lat, lon in boundary],
+                color="#F39C12", weight=1.0, fill=True,
+                fill_color="#F39C12", fill_opacity=0.30,
+                tooltip=folium.Tooltip(f"Monitor: {float(row['crime_probability']):.1%}"),
+            ).add_to(monitor_layer)
+        monitor_layer.add_to(m)
+
+    # ── Flagged tiles (added last = topmost layer, tooltip always reachable)
     flagged_layer = folium.FeatureGroup(name="🚨 Flagged Tiles", show=True)
     flagged_df = df[df["flagged"] == 1]
 
@@ -322,20 +336,6 @@ def build_map(
             popup=folium.Popup(tooltip, max_width=280),
         ).add_to(flagged_layer)
     flagged_layer.add_to(m)
-
-    # ── Monitor tiles ─────────────────────────────────────────────────────
-    if show_monitor:
-        monitor_layer = folium.FeatureGroup(name="⚠️ Monitor", show=True)
-        monitor_df = df[(df["flagged"] == 0) & (df["crime_probability"] >= threshold * 0.65)]
-        for _, row in monitor_df.iterrows():
-            boundary = h3.cell_to_boundary(row["h3_address"])
-            folium.Polygon(
-                locations=[(lat, lon) for lat, lon in boundary],
-                color="#F39C12", weight=1.0, fill=True,
-                fill_color="#F39C12", fill_opacity=0.30,
-                tooltip=folium.Tooltip(f"Monitor: {float(row['crime_probability']):.1%}"),
-            ).add_to(monitor_layer)
-        monitor_layer.add_to(m)
 
     folium.LayerControl(position="topright", collapsed=False).add_to(m)
     plugins.MiniMap(tile_layer="CartoDB positron", zoom_level_offset=-6).add_to(m)
