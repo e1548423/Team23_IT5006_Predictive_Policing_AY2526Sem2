@@ -1,44 +1,65 @@
 # Chicago Violent Crime Prediction — Patrol Dispatch Dashboard
 
-Streamlit web app for real-time crime prediction and patrol dispatch planning in Chicago.
+Streamlit web app for real-time crime prediction and patrol dispatch planning in Chicago, powered by a FastAPI model backend hosted on Render.
 
-## Architecture
+## Folder Structure
 
-- **Model**: Calibrated XGBoost trained on 3 years of violent crime data (BATTERY, ASSAULT, ROBBERY)
+```
+ML/
+├── App/                        ← Streamlit Cloud (UI only)
+│   ├── streamlit_app.py
+│   ├── requirements.txt
+│   └── README.md
+└── Deploy_Render/              ← Render.com (FastAPI model API)
+    ├── main.py
+    ├── requirements.txt
+    ├── render.yaml
+    └── deployment/
+        ├── xgb_calibrated_pipeline.joblib
+        ├── tile_baseline.csv
+        └── metadata.json
+```
+
+The model runs on Render as a FastAPI service. Streamlit Cloud handles only the UI and calls the API for predictions — it never loads the model directly, keeping deploys fast and lightweight.
+
+### Model
+
+- **Algorithm**: Calibrated XGBoost (CalibratedClassifierCV with sigmoid calibration)
+- **Training data**: 3 years of violent crime records (BATTERY, ASSAULT, ROBBERY) from the Chicago SODA API
 - **Spatial grid**: H3 resolution-8 hexagonal tiles (~0.7 km²)
 - **Features**: Temporal lags, EWMA momentum, city-normalised rolling stats, spatial neighbour spillover, cyclical time encoding
-- **Inference**: Pre-trained model scores all tiles for any date × shift combination in <1 second
+- **Inference**: Scores all tiles for any date × shift combination
 
-## Setup
+### API Endpoints on Render
 
-### 1. Train the model (locally, in Jupyter)
+   ```toml
+   CRIME_API_URL = "https://team23-it5006-chicago-crime-api.onrender.com"
+   ```
 
-Run `Retrain_Inference_Engine_UI.ipynb` STEP 0 to fetch data and train. This creates:
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/metadata` | GET | Model config, ROC-AUC, optimal threshold, precision/recall |
+| `/baselines` | GET | H3 tile addresses for beat/community mapping |
+| `/predict` | POST | Score all tiles for a given date, shift, and threshold |
+| `/pr_at_threshold` | GET | Interpolated precision/recall for any threshold value |
+| `/docs` | GET | Interactive Swagger UI |
 
-```
-deployment/
-├── xgb_calibrated_pipeline.joblib   # Calibrated XGBoost pipeline
-├── tile_baseline.csv                # Per-tile feature baselines (851 tiles)
-└── metadata.json                    # Model config + performance metrics
-```
+## How to run
 
-### 2. Deploy to Streamlit Cloud
+### 1. (Re)Train the model
 
-1. Push this repo to GitHub (including the `deployment/` folder)
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Connect your GitHub repo
-4. Set main file to `streamlit_app.py`
-5. Deploy
+Run `Retrain_Inference_Engine_UI.ipynb` STEP 0 in `ML/App/`. This fetches last 3 years of data from the Chicago SODA API, engineers features, trains the model, and saves deployment artefacts to `ML/Deploy_Render/deployment/`:
 
-### 3. Update the model
+- `xgb_calibrated_pipeline.joblib` — calibrated XGBoost pipeline
+- `tile_baseline.csv` — per-tile feature baselines (~848 tiles)
+- `metadata.json` — model config, performance metrics, and PR curve data
 
-Re-run STEP 0 in the notebook locally, then push the updated `deployment/` folder to GitHub. Streamlit Cloud will auto-redeploy.
+### 2. Update API on Render
 
-## Files
+1. Push the updated `ML/Deploy_Render/deployment/` folder to GitHub
+2. Render auto-redeploys with the new model — Streamlit needs no changes
 
-| File | Purpose |
-|------|---------|
-| `streamlit_app.py` | Main Streamlit application |
-| `requirements.txt` | Python dependencies |
-| `deployment/` | Pre-trained model artefacts |
-| `Inference_Engine_UI_v2.ipynb` | Training + full inference notebook |
+### 3. View the dashboard on Streamlit Cloud
+
+1. Go to https://team23it5006predictivepolicingay2526sem2-sxfonxxmudo9cyzjct2au.streamlit.app/
