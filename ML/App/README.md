@@ -32,9 +32,8 @@ The model runs on Render as a FastAPI service. Streamlit Cloud handles only the 
 
 ### API Endpoints on Render
 
-   ```toml
-   CRIME_API_URL = "https://team23-it5006-chicago-crime-api.onrender.com"
-   ```
+CRIME_API_URL = https://team23-it5006-chicago-crime-api.onrender.com
+
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
