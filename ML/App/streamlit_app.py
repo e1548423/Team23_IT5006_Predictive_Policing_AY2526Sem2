@@ -226,7 +226,7 @@ def prob_to_hex(prob, threshold=0.15):
 
 def build_map(
     results, beats_json, community_json, tile_beat_map, tile_community_map,
-    threshold, show_monitor, district_filter, beat_filter, tier_filter,
+    threshold, show_monitor, district_filter, beat_filter, community_filter, tier_filter,
 ):
     m = folium.Map(location=[41.8781, -87.6298], zoom_start=11, tiles="CartoDB positron")
 
@@ -280,11 +280,14 @@ def build_map(
     df = results.copy()
     df["_beat"] = df["h3_address"].map(lambda h: tile_beat_map.get(h, ("Unknown", ""))[0])
     df["_district"] = df["h3_address"].map(lambda h: tile_beat_map.get(h, ("Unknown", ""))[1])
+    df["_community"] = df["h3_address"].map(lambda h: tile_community_map.get(h, "Unknown"))
 
     if district_filter != "ALL":
         df = df[df["_district"] == district_filter]
     if beat_filter != "ALL":
         df = df[df["_beat"] == beat_filter]
+    if community_filter != "ALL":
+        df = df[df["_community"] == community_filter]
     if tier_filter:
         df = df[df["risk_tier"].isin(tier_filter)]
 
@@ -433,6 +436,12 @@ with st.sidebar:
         options=beat_options,
         format_func=lambda b: "All beats" if b == "ALL" else f"Beat {b}",
     )
+    all_communities = sorted({v for v in tile_community_map.values() if v != "Unknown"})
+    community_filter = st.selectbox(
+        "Community Area",
+        options=["ALL"] + all_communities,
+        format_func=lambda c: "All community areas" if c == "ALL" else c,
+    )
 
     st.markdown("---")
     st.markdown("### 🏷️ Risk Tiers")
@@ -440,8 +449,22 @@ with st.sidebar:
         "Show tiers",
         options=["Critical", "High", "Moderate", "Low"],
         default=["Critical", "High", "Moderate", "Low"],
+        help=(
+            "**Critical** — highest predicted risk (top of the probability distribution).  \n"
+            "**High** — elevated risk, warrants proactive patrol.  \n"
+            "**Moderate** — worth monitoring; lower confidence of an incident.  \n"
+            "**Low** — below the dispatch threshold; shown for situational awareness."
+        ),
     )
-    show_monitor = st.checkbox("Show monitor layer", value=False)
+    show_monitor = st.checkbox(
+        "Show monitor layer",
+        value=False,
+        help=(
+            "Highlights tiles that fall just below the dispatch threshold "
+            "(≥ 65 % of it). Useful for keeping an eye on areas that are "
+            "close to being flagged but haven't crossed the cutoff yet."
+        ),
+    )
 
     st.markdown("---")
     use_live = st.checkbox("🔄 Use live lag data", value=False)
@@ -505,7 +528,7 @@ with tab_map:
     with st.spinner("Building map …"):
         patrol_map, filtered_df = build_map(
             results, beats_json, community_json, tile_beat_map, tile_community_map,
-            threshold, show_monitor, district_filter, beat_filter, tier_filter,
+            threshold, show_monitor, district_filter, beat_filter, community_filter, tier_filter,
         )
     st_folium(patrol_map, width=None, height=650, returned_objects=[])
 
@@ -524,6 +547,8 @@ with tab_table:
         display_df = display_df[display_df["district"] == district_filter]
     if beat_filter != "ALL":
         display_df = display_df[display_df["beat"] == beat_filter]
+    if community_filter != "ALL":
+        display_df = display_df[display_df["community"] == community_filter]
     if tier_filter:
         display_df = display_df[display_df["risk_tier"].isin(tier_filter)]
 
