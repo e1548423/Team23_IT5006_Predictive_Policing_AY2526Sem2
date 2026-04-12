@@ -13,7 +13,7 @@ Thus, the model will be tested using crime data from Los Angeles and Boston. Bot
 - **Los Angeles Crime Data (2020–2024)**: [Crime Data from 2020 to 2024](https://data.lacity.org/Public-Safety/Crime-Data-from-2020-to-2024/2nrs-mtv8/about_data)
 - **Boston Crime Incident Reports (2015–Present)**: [Crime Incident Reports – New System](https://data.boston.gov/dataset/crime-incident-reports-august-2015-to-date-source-new-system/resource/b973d8cb-eeb2-4e7e-99da-c92938efc9c0)
 
-Both crime dataset needed to be preprocessed first to ensure consistent features with the ML model. For the generalization test, the crime data spans from 2022 - 2025. The finalized data covering Boston spans from 2022 - 2024 while LA data spans from 2023 - 2025. This ensures that the time period matches with the Chicago dataset that was used to train the ML model.
+Both crime dataset needed to be preprocessed first to ensure consistent features with the ML model. For the generalization test, the crime data spans during post-covid time period from 2022 - 2025. The finalized data covering LA spans from 2022 - 2024 while Boston data spans from 2023 - 2025. This ensures that the time period matches with the Chicago dataset that was used to train the ML model.
 
 
 # Folder Structure
