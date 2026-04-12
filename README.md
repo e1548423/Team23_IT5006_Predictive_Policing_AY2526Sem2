@@ -14,9 +14,9 @@ The goal of each project's milestone includes:
 2. ML           : Develop a machine learning model that can be an additional tool to help law enforcement in crime policing.
 3. Deployment   : Deploy the machine learning model into a web application as a Proof of Concept (PoC).
 
-## Code Structure
+## File Structure
 
-Note: The following code structure displays general but important files and folders. A much detailed file/folder structure can be viewed by the user.
+Note: The following file structure displays general but important files and folders. A much detailed file/folder structure can be viewed by the user.
 ```
 ├── EDA/
 │ ├── 0. DatasetDownload.ipynb (Download dataset locally)
